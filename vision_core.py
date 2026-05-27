@@ -3,6 +3,12 @@ import mediapipe as mp
 import numpy as np
 import time
 
+# Explicitly import solutions to avoid AttributeError
+from mediapipe.python.solutions import hands as mp_hands
+from mediapipe.python.solutions import pose as mp_pose
+from mediapipe.python.solutions import face_detection as mp_face_detection
+from mediapipe.python.solutions import face_mesh as mp_face_mesh
+
 class VisionCore:
     def __init__(self, camera_id=0, width=640, height=480):
         self.cap = cv2.VideoCapture(camera_id)
@@ -20,7 +26,7 @@ class VisionCore:
     @property
     def mp_hands(self):
         if self._hands is None:
-            self._hands = mp.solutions.hands.Hands(
+            self._hands = mp_hands.Hands(
                 static_image_mode=False,
                 max_num_hands=1, # Reduced for memory
                 min_detection_confidence=0.5,
@@ -31,7 +37,7 @@ class VisionCore:
     @property
     def mp_pose(self):
         if self._pose is None:
-            self._pose = mp.solutions.pose.Pose(
+            self._pose = mp_pose.Pose(
                 static_image_mode=False,
                 model_complexity=0,
                 min_detection_confidence=0.5,
@@ -42,7 +48,7 @@ class VisionCore:
     @property
     def mp_face_detection(self):
         if self._face_detection is None:
-            self._face_detection = mp.solutions.face_detection.FaceDetection(
+            self._face_detection = mp_face_detection.FaceDetection(
                 model_selection=0,
                 min_detection_confidence=0.5
             )
@@ -51,7 +57,7 @@ class VisionCore:
     @property
     def mp_face_mesh(self):
         if self._face_mesh is None:
-            self._face_mesh = mp.solutions.face_mesh.FaceMesh(
+            self._face_mesh = mp_face_mesh.FaceMesh(
                 static_image_mode=False,
                 max_num_faces=1,
                 refine_landmarks=False, # Disable for memory
