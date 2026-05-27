@@ -1,51 +1,53 @@
 # Project Omni-Desk: The Universal Physical AI Layer
 
-Omni-Desk transforms a standard laptop and webcam into a spatial computer. It maps your physical desk to digital commands and automates your workflow based on your habits.
+Omni-Desk transforms a standard laptop and webcam into a spatial computer using Edge AI. It bridges your physical world (atoms) and digital world (pixels).
 
-## 🚀 Quick Start (How to Run)
+## 🚀 NEW: UX 2.0 (Intuitive & Interactive)
+The latest version includes **Offline Voice Feedback** and a **Visual Preview** system to make spatial computing effortless.
 
 ### 1. Prerequisites
-Ensure you have Python 3.8 or higher installed.
+- Python 3.8+
+- Webcam
 
 ### 2. Install Dependencies
-Open your terminal and run:
 ```bash
-pip install opencv-python mediapipe pyautogui PyQt5 numpy screen-brightness-control psutil
+pip install opencv-python mediapipe pyautogui PyQt5 numpy screen-brightness-control psutil pyttsx3
 ```
 
-### 3. Calibration (Initial Setup)
-Before running the main app, you must calibrate your Paper Dashboard:
-```bash
-python calibrate.py
-```
-*Click the 4 corners of your paper in order. Press 's' to save.*
-
-### 4. Run the Application
-Navigate to the project folder and execute:
+### 3. Run the Application
 ```bash
 python main.py
 ```
 
-## 🛠 Features
+## 🎮 How to Use (Simplified UX)
 
-*   **The Paper Dashboard:** Draw buttons on an A4 sheet. The system maps them to OS commands.
-*   **Ghost Actions:** Record a motion (like closing a book) and link it to an action (like locking your PC).
-*   **Posture Guardian:** Automatically dims the screen if you slouch for too long.
-*   **Privacy Shield:** Instantly minimizes all windows if a second person is detected behind you.
-*   **Phone-Down Focus:** Triggers "Do Not Disturb" mode when your phone is placed face-down on the desk.
-*   **Coffee Mug Mute:** Mutes your microphone automatically when you lift your mug.
-*   **Air-Scroll:** Scroll through content by moving your hand in the air.
+### The Floating Bubble
+A small blue bubble appears on your screen.
+- **Left-Click:** Move the bubble anywhere.
+- **Right-Click:** Open the **Quick Mode Menu**:
+  - **Focus Mode:** Enables Privacy Shield (monitors backgrounds), Posture Guardian (straightens your back), and Phone-Down Focus.
+  - **Lazy Mode:** Enables Air-Scroll (scroll hands-free), Paper Dashboard, and Coffee Mug Mute.
+  - **All Off:** Pauses processing to save CPU/Battery.
+  - **Toggle Preview:** Opens a tiny 150x150 window showing exactly what the camera sees (landmarks included).
 
-## ⚙️ Configuration
-The `config.json` file allows you to customize sensitivity, macros, and calibration points.
+### Voice Feedback (Local & Offline)
+The app speaks to you! You will hear:
+- "Dashboard connected" when the camera sees your A4 paper.
+- "Muting microphone" when you tap a paper button.
+- "Please fix your posture" when you slouch.
 
-*   `paper_dashboard`: Define button coordinates and actions.
-*   `habits`: Enable/Disable specific features and set thresholds.
+## 🛠 Features Breakdown
 
-## 🖥 Hardware Requirements
-*   **Processor:** Intel Core i5 (7th Gen or better)
-*   **RAM:** < 150MB overhead
-*   **Camera:** Standard Integrated Webcam
+1.  **Auto Paper Dashboard:** Place a white A4 paper on your desk. The app detects it automatically. Tap areas on the paper to trigger macros.
+2.  **Shush Trigger:** Place your index finger on your lips to instantly mute all volume and minimize non-work windows.
+3.  **Table Double-Tap:** Double-tap your desk surface with your hand to Play/Pause media (Spacebar).
+4.  **Air-Scroll:** Move your wrist up/down in front of the camera to scroll through TikTok, YouTube, or articles.
+5.  **Privacy Shield:** Screen minimizes automatically if someone stands behind you.
+6.  **Posture Guardian:** Screen dims if you sit with bad posture for over 10 minutes.
 
-## 🔒 Privacy
-Omni-Desk runs **100% Offline**. No data is sent to the cloud. All vision processing happens locally on your CPU.
+## 🔒 Security & Privacy
+1.  **100% Offline:** No images or data ever leave your machine.
+2.  **Privacy Shield:** Built-in protection against shoulder-surfers.
+
+## 🖥 Hardware Target
+Optimized for **Intel Core i5 (7th Gen)** with < 150MB RAM usage.
