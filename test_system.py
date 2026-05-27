@@ -38,8 +38,8 @@ class TestOmniDeskSystem(unittest.TestCase):
 
     def test_vision_core_initialization(self):
         vc = VisionCore()
-        self.assertIsNotNone(vc.mp_hands)
-        self.assertIsNotNone(vc.mp_pose)
+        self.assertIsNotNone(vc.hands)
+        self.assertIsNotNone(vc.pose)
         vc.release()
 
     def test_habit_engine_logic(self):

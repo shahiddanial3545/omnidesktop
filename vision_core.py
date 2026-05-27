@@ -1,37 +1,57 @@
 import cv2
-import mediapipe as mp
 import numpy as np
 import time
+import sys
 
-# Multi-tiered MediaPipe solution imports for maximum compatibility
-try:
-    # Tier 1: Try importing from the python subpackage
-    from mediapipe.python.solutions import hands as mp_hands
-    from mediapipe.python.solutions import pose as mp_pose
-    from mediapipe.python.solutions import face_detection as mp_face_detection
-    from mediapipe.python.solutions import face_mesh as mp_face_mesh
-except ImportError:
-    try:
-        # Tier 2: Try direct attribute access via solutions submodule
-        import mediapipe.solutions.hands as mp_hands
-        import mediapipe.solutions.pose as mp_pose
-        import mediapipe.solutions.face_detection as mp_face_detection
-        import mediapipe.solutions.face_mesh as mp_face_mesh
-    except ImportError:
-        # Tier 3: Final fallback to attribute access on the main package
-        # This sometimes fails if not explicitly imported, handled via try-except
+# Extremely resilient MediaPipe loader
+def load_mp_solution(name):
+    # Try multiple common import paths for MediaPipe solutions
+    paths = [
+        f"mediapipe.python.solutions.{name}",
+        f"mediapipe.solutions.{name}",
+        f"solutions.{name}"
+    ]
+
+    # Try direct imports first
+    for path in paths:
         try:
-            mp_hands = mp.solutions.hands
-            mp_pose = mp.solutions.pose
-            mp_face_detection = mp.solutions.face_detection
-            mp_face_mesh = mp.solutions.face_mesh
-        except AttributeError:
-            # Last resort: Try importing them individually
-            import mediapipe.solutions as solutions
-            mp_hands = solutions.hands
-            mp_pose = solutions.pose
-            mp_face_detection = solutions.face_detection
-            mp_face_mesh = solutions.face_mesh
+            __import__(path)
+            return sys.modules[path]
+        except ImportError:
+            continue
+
+    # Try attribute access on mediapipe
+    try:
+        import mediapipe as mp
+        if hasattr(mp, 'solutions'):
+            solutions = getattr(mp, 'solutions')
+            if hasattr(solutions, name):
+                return getattr(solutions, name)
+    except (ImportError, AttributeError):
+        pass
+
+    # Try importing solutions subpackage directly
+    try:
+        import mediapipe.solutions as mp_solutions
+        if hasattr(mp_solutions, name):
+            return getattr(mp_solutions, name)
+    except (ImportError, AttributeError):
+        pass
+
+    raise ImportError(f"Could not load MediaPipe solution: {name}. Please ensure mediapipe is installed correctly.")
+
+# Pre-load solutions
+try:
+    mp_hands = load_mp_solution('hands')
+    mp_pose = load_mp_solution('pose')
+    mp_face_detection = load_mp_solution('face_detection')
+    mp_face_mesh = load_mp_solution('face_mesh')
+except ImportError as e:
+    print(f"CRITICAL ERROR: {e}")
+    # Define dummy classes to avoid NameError if pre-loading fails but app continues
+    class Dummy:
+        def __getattr__(self, name): return lambda *args, **kwargs: None
+    mp_hands = mp_pose = mp_face_detection = mp_face_mesh = Dummy()
 
 class VisionCore:
     def __init__(self, camera_id=0, width=640, height=480):
@@ -48,18 +68,18 @@ class VisionCore:
         self._face_mesh = None
 
     @property
-    def mp_hands(self):
+    def hands(self):
         if self._hands is None:
             self._hands = mp_hands.Hands(
                 static_image_mode=False,
-                max_num_hands=1, # Reduced for memory
+                max_num_hands=1,
                 min_detection_confidence=0.5,
                 min_tracking_confidence=0.5
             )
         return self._hands
 
     @property
-    def mp_pose(self):
+    def pose(self):
         if self._pose is None:
             self._pose = mp_pose.Pose(
                 static_image_mode=False,
@@ -70,7 +90,7 @@ class VisionCore:
         return self._pose
 
     @property
-    def mp_face_detection(self):
+    def face_detection(self):
         if self._face_detection is None:
             self._face_detection = mp_face_detection.FaceDetection(
                 model_selection=0,
@@ -79,12 +99,12 @@ class VisionCore:
         return self._face_detection
 
     @property
-    def mp_face_mesh(self):
+    def face_mesh(self):
         if self._face_mesh is None:
             self._face_mesh = mp_face_mesh.FaceMesh(
                 static_image_mode=False,
                 max_num_faces=1,
-                refine_landmarks=False, # Disable for memory
+                refine_landmarks=False,
                 min_detection_confidence=0.5,
                 min_tracking_confidence=0.5
             )
@@ -99,7 +119,6 @@ class VisionCore:
         return frame
 
     def process(self, frame, features=None):
-        # features: list of ['hands', 'pose', 'face_detection', 'face_mesh']
         if features is None:
             features = ['hands', 'pose', 'face_detection', 'face_mesh']
 
@@ -107,13 +126,13 @@ class VisionCore:
         results = {}
 
         if 'hands' in features:
-            results['hands'] = self.mp_hands.process(rgb_frame)
+            results['hands'] = self.hands.process(rgb_frame)
         if 'pose' in features:
-            results['pose'] = self.mp_pose.process(rgb_frame)
+            results['pose'] = self.pose.process(rgb_frame)
         if 'face_detection' in features:
-            results['face_detection'] = self.mp_face_detection.process(rgb_frame)
+            results['face_detection'] = self.face_detection.process(rgb_frame)
         if 'face_mesh' in features:
-            results['face_mesh'] = self.mp_face_mesh.process(rgb_frame)
+            results['face_mesh'] = self.face_mesh.process(rgb_frame)
 
         return results
 
@@ -121,7 +140,6 @@ class VisionCore:
         self.cap.release()
 
 if __name__ == "__main__":
-    # Sanity check
     vc = VisionCore()
     start_time = time.time()
     frames = 0
