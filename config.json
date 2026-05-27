@@ -4,7 +4,8 @@
         "buttons": [
             {"name": "Mute", "rect": [0.05, 0.05, 0.25, 0.25], "macro": "toggle_mute"},
             {"name": "Browser", "rect": [0.75, 0.05, 0.95, 0.25], "macro": "launch_browser"}
-        ]
+        ],
+        "auto_detect": true
     },
     "ghost_actions": [],
     "habits": {
@@ -35,12 +36,21 @@
             "enabled": true,
             "target_color_hsv": [0, 0, 50],
             "tolerance": 20
+        },
+        "shush_trigger": {
+            "enabled": true,
+            "dist_threshold": 0.05
+        },
+        "double_tap": {
+            "enabled": true,
+            "velocity_threshold": 0.02
         }
     },
     "system": {
         "camera_id": 0,
         "frame_width": 640,
         "frame_height": 480,
-        "fps": 30
+        "fps": 30,
+        "ema_alpha": 0.3
     }
 }
