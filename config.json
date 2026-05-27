@@ -1,0 +1,46 @@
+{
+    "paper_dashboard": {
+        "corners": null,
+        "buttons": [
+            {"name": "Mute", "rect": [0.05, 0.05, 0.25, 0.25], "macro": "toggle_mute"},
+            {"name": "Browser", "rect": [0.75, 0.05, 0.95, 0.25], "macro": "launch_browser"}
+        ]
+    },
+    "ghost_actions": [],
+    "habits": {
+        "phone_down": {
+            "enabled": true,
+            "roi": [0.3, 0.3, 0.7, 0.7],
+            "macro_on": "dnd_on",
+            "macro_off": "dnd_off"
+        },
+        "privacy_shield": {
+            "enabled": true,
+            "sensitivity": 0.5
+        },
+        "posture_guardian": {
+            "enabled": true,
+            "slouch_timeout": 600,
+            "eye_dist_threshold": 0.2
+        },
+        "air_scroll": {
+            "enabled": true,
+            "sensitivity": 0.1
+        },
+        "morning_routine": {
+            "enabled": true,
+            "apps": ["chrome", "code"]
+        },
+        "coffee_mug_mute": {
+            "enabled": true,
+            "target_color_hsv": [0, 0, 50],
+            "tolerance": 20
+        }
+    },
+    "system": {
+        "camera_id": 0,
+        "frame_width": 640,
+        "frame_height": 480,
+        "fps": 30
+    }
+}
