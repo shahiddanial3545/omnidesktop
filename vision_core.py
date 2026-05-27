@@ -3,18 +3,35 @@ import mediapipe as mp
 import numpy as np
 import time
 
-# Robust MediaPipe solution imports
+# Multi-tiered MediaPipe solution imports for maximum compatibility
 try:
+    # Tier 1: Try importing from the python subpackage
     from mediapipe.python.solutions import hands as mp_hands
     from mediapipe.python.solutions import pose as mp_pose
     from mediapipe.python.solutions import face_detection as mp_face_detection
     from mediapipe.python.solutions import face_mesh as mp_face_mesh
 except ImportError:
-    # Fallback for different package structures
-    mp_hands = mp.solutions.hands
-    mp_pose = mp.solutions.pose
-    mp_face_detection = mp.solutions.face_detection
-    mp_face_mesh = mp.solutions.face_mesh
+    try:
+        # Tier 2: Try direct attribute access via solutions submodule
+        import mediapipe.solutions.hands as mp_hands
+        import mediapipe.solutions.pose as mp_pose
+        import mediapipe.solutions.face_detection as mp_face_detection
+        import mediapipe.solutions.face_mesh as mp_face_mesh
+    except ImportError:
+        # Tier 3: Final fallback to attribute access on the main package
+        # This sometimes fails if not explicitly imported, handled via try-except
+        try:
+            mp_hands = mp.solutions.hands
+            mp_pose = mp.solutions.pose
+            mp_face_detection = mp.solutions.face_detection
+            mp_face_mesh = mp.solutions.face_mesh
+        except AttributeError:
+            # Last resort: Try importing them individually
+            import mediapipe.solutions as solutions
+            mp_hands = solutions.hands
+            mp_pose = solutions.pose
+            mp_face_detection = solutions.face_detection
+            mp_face_mesh = solutions.face_mesh
 
 class VisionCore:
     def __init__(self, camera_id=0, width=640, height=480):
