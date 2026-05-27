@@ -13,7 +13,14 @@ Open your terminal and run:
 pip install opencv-python mediapipe pyautogui PyQt5 numpy screen-brightness-control psutil
 ```
 
-### 3. Run the Application
+### 3. Calibration (Initial Setup)
+Before running the main app, you must calibrate your Paper Dashboard:
+```bash
+python calibrate.py
+```
+*Click the 4 corners of your paper in order. Press 's' to save.*
+
+### 4. Run the Application
 Navigate to the project folder and execute:
 ```bash
 python main.py
