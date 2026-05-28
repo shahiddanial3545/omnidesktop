@@ -37,6 +37,11 @@ class HabitEngine:
         self.is_dimmed = False
         self.pinch_start_times = {"index": 0, "middle": 0, "ring": 0}
 
+        # New cooldown and tracking variables
+        self._last_shush_time = 0
+        self._last_privacy_time = 0
+        self._obj_last_triggered = {}
+
         self._tts_engine = None
         if HAS_TTS:
             try:
@@ -118,14 +123,19 @@ class HabitEngine:
                 if time.time() - self.last_slouch_time > self.config.get('habits', {}).get('posture_guardian', {}).get('slouch_timeout', 600):
                     self._safe_macro(sbc.set_brightness, 20)
             else:
-                if self.is_slouching: self._safe_macro(sbc.set_brightness, 80); self.is_slouching = False
+                if self.is_slouching:
+                    self._safe_macro(sbc.set_brightness, 100)
+                    self.is_slouching = False
 
     def privacy_shield(self, face_results):
         if self.mode != "Focus" and self.mode != "All": return
         if not self.config.get('habits', {}).get('privacy_shield', {}).get('enabled', True): return
         if face_results and hasattr(face_results, 'detections') and face_results.detections and len(face_results.detections) > 1:
-            self.speak("Privacy shield activated")
-            self._safe_macro(pyautogui.hotkey, 'win', 'd')
+            now = time.time()
+            if now - self._last_privacy_time > 5.0:
+                self._last_privacy_time = now
+                self.speak("Privacy shield activated")
+                self._safe_macro(pyautogui.hotkey, 'win', 'd')
 
     def shush_trigger(self, hand_results, face_mesh_results):
         if self.mode != "Focus" and self.mode != "All": return
@@ -134,10 +144,15 @@ class HabitEngine:
             face_mesh_results and hasattr(face_mesh_results, 'multi_face_landmarks') and face_mesh_results.multi_face_landmarks):
             f = hand_results.multi_hand_landmarks[0].landmark[8]
             l = face_mesh_results.multi_face_landmarks[0].landmark[13]
-            if np.sqrt((f.x-l.x)**2 + (f.y-l.y)**2) < self.config.get('habits', {}).get('shush_trigger', {}).get('dist_threshold', 0.05):
-                self.speak("Muting microphone")
-                self._safe_macro(pyautogui.press, 'volumemute')
-                self._safe_macro(pyautogui.hotkey, 'win', 'd')
+            dist = np.sqrt((f.x-l.x)**2 + (f.y-l.y)**2)
+            threshold = self.config.get('habits', {}).get('shush_trigger', {}).get('dist_threshold', 0.05)
+            if dist < threshold:
+                now = time.time()
+                if now - self._last_shush_time > 3.0:
+                    self._last_shush_time = now
+                    self.speak("Muting microphone")
+                    self._safe_macro(pyautogui.press, 'volumemute')
+                    self._safe_macro(pyautogui.hotkey, 'win', 'd')
 
     def air_scroll(self, hand_results):
         if self.mode != "Lazy" and self.mode != "All": return
@@ -189,10 +204,27 @@ class HabitEngine:
             if self.mug_present: self._safe_macro(pyautogui.hotkey, 'ctrl', 'alt', 'm'); self.mug_present = False
 
     def check_custom_objects(self, frame):
+        now = time.time()
         for obj in self.config.get('custom_objects', []):
             target = np.array(obj['hsv'])
-            mask = cv2.inRange(cv2.cvtColor(frame, cv2.COLOR_BGR2HSV), np.clip(target - 20, 0, 255), np.clip(target + 20, 0, 255))
-            if cv2.countNonZero(mask) > 1000: pass
+            mask = cv2.inRange(
+                cv2.cvtColor(frame, cv2.COLOR_BGR2HSV),
+                np.clip(target - 20, 0, 255),
+                np.clip(target + 20, 0, 255)
+            )
+            if cv2.countNonZero(mask) > 1000:
+                obj_key = str(obj['hsv'])
+                last_time = self._obj_last_triggered.get(obj_key, 0)
+                if now - last_time > 2.0:
+                    self._obj_last_triggered[obj_key] = now
+                    self.play_chime("detect")
+                    macro = obj.get('macro', '')
+                    if macro:
+                        try:
+                            import subprocess
+                            subprocess.Popen(macro, shell=True)
+                        except Exception as e:
+                            print(f"Object macro failed: {e}")
 
     def morning_routine(self, face_results):
         if self.mode == "Off" or self.morning_routine_done: return
