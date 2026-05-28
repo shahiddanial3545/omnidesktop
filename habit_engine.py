@@ -40,6 +40,8 @@ class HabitEngine:
         self.pinch_start_times = {"index": 0, "middle": 0, "ring": 0}
         self._swipe_detector = None  # injected from main
         self._last_swipe_time = 0
+        self._last_snap_time = 0
+        self._snap_prev_dist = None
 
         # Feature A: Blink Detection
         self._blink_count = 0
@@ -338,14 +340,43 @@ class HabitEngine:
             if self._swipe_detector:
                 res = self._swipe_detector.update(wrist_x)
                 now = time.time()
-                if res == "left" and now - self._last_swipe_time > 1.5:
+                if res == "left" and now - self._last_swipe_time > 0.5:
                     self._safe_macro(pyautogui.hotkey, 'ctrl', 'win', 'left')
                     self.log_event("🖥️ Virtual Desktop: Left")
                     self._last_swipe_time = now
-                elif res == "right" and now - self._last_swipe_time > 1.5:
+                elif res == "right" and now - self._last_swipe_time > 0.5:
                     self._safe_macro(pyautogui.hotkey, 'ctrl', 'win', 'right')
                     self.log_event("🖥️ Virtual Desktop: Right")
                     self._last_swipe_time = now
+
+    def window_snap_control(self, hand_results):
+        if self.mode == "Off": return
+        if not self.config.get('habits', {}).get('window_snap', {}).get('enabled', True): return
+        if hand_results and hasattr(hand_results, 'multi_hand_landmarks') and len(hand_results.multi_hand_landmarks) >= 2:
+            lm0 = hand_results.multi_hand_landmarks[0].landmark[0]
+            lm1 = hand_results.multi_hand_landmarks[1].landmark[0]
+            dist = np.sqrt((lm0.x - lm1.x)**2 + (lm0.y - lm1.y)**2)
+            if self._snap_prev_dist is None: self._snap_prev_dist = dist; return
+            delta = dist - self._snap_prev_dist
+            now = time.time()
+            if now - self._last_snap_time < 1.0: self._snap_prev_dist = dist; return
+            if delta > 0.12:
+                self._safe_macro(pyautogui.hotkey, 'win', 'up')
+                self.log_event("🗖 Window Maximized (spread)")
+                self._last_snap_time = now
+            elif delta < -0.12:
+                self._safe_macro(pyautogui.hotkey, 'win', 'down')
+                self.log_event("🗗 Window Minimized (pinch)")
+                self._last_snap_time = now
+            elif lm0.x < 0.2 and abs(delta) < 0.05:
+                self._safe_macro(pyautogui.hotkey, 'win', 'left')
+                self.log_event("⬅️ Window Snapped Left")
+                self._last_snap_time = now
+            elif lm0.x > 0.8 and abs(delta) < 0.05:
+                self._safe_macro(pyautogui.hotkey, 'win', 'right')
+                self.log_event("➡️ Window Snapped Right")
+                self._last_snap_time = now
+            self._snap_prev_dist = dist
 
     def voice_command_listener(self, callback):
         try:

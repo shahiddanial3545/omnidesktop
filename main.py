@@ -277,6 +277,7 @@ class OmniDeskApp:
 
             self.habit_engine.palm_menu(hands)
             self.habit_engine.virtual_desktop_switcher(hands)
+            self.habit_engine.window_snap_control(hands)
             self.habit_engine.air_scroll(hands)
             self.habit_engine.double_tap_detector(hands)
 
