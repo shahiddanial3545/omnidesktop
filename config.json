@@ -21,7 +21,8 @@
         "coffee_mug_mute": {"enabled": true, "target_color_hsv": [0, 0, 50], "tolerance": 20},
         "morning_routine": {"enabled": true, "apps": ["chrome", "code"]},
         "virtual_desktop": {"enabled": true},
-        "window_snap": {"enabled": true}
+        "window_snap": {"enabled": true},
+        "app_switcher": {"enabled": true}
     },
     "system": {
         "camera_id": 0,

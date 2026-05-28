@@ -6,6 +6,7 @@ import cv2
 import subprocess
 import shutil
 import os
+import sys
 
 # Robust audio fallback
 try:
@@ -42,6 +43,10 @@ class HabitEngine:
         self._last_swipe_time = 0
         self._last_snap_time = 0
         self._snap_prev_dist = None
+        self._circle_detector = None  # injected from main
+        self._alt_tab_open = False
+        self._last_switcher_time = 0
+        self._switcher_prev_x = None
 
         # Feature A: Blink Detection
         self._blink_count = 0
@@ -378,6 +383,37 @@ class HabitEngine:
                 self._last_snap_time = now
             self._snap_prev_dist = dist
 
+    def app_switcher(self, hand_results):
+        if self.mode == "Off": return
+        if not self.config.get('habits', {}).get('app_switcher', {}).get('enabled', True): return
+
+        if not hand_results or not hasattr(hand_results, 'multi_hand_landmarks') or not hand_results.multi_hand_landmarks:
+            if self._alt_tab_open:
+                pyautogui.press('return')
+                pyautogui.keyUp('alt')
+                self._alt_tab_open = False
+            return
+
+        lm = hand_results.multi_hand_landmarks[0].landmark[8] # index tip
+        if self._circle_detector and self._circle_detector.update(lm.x, lm.y):
+            if not self._alt_tab_open:
+                pyautogui.keyDown('alt')
+                pyautogui.press('tab')
+                self._alt_tab_open = True
+                self.log_event("🔄 App Switcher opened")
+                self._switcher_prev_x = lm.x
+
+        if self._alt_tab_open and self._switcher_prev_x is not None:
+            delta_x = lm.x - self._switcher_prev_x
+            if delta_x > 0.08:
+                pyautogui.press('tab')
+                self._switcher_prev_x = lm.x
+                self.log_event("➡️ App Switch: Next")
+            elif delta_x < -0.08:
+                pyautogui.hotkey('shift', 'tab')
+                self._switcher_prev_x = lm.x
+                self.log_event("⬅️ App Switch: Previous")
+
     def voice_command_listener(self, callback):
         try:
             import speech_recognition as sr
@@ -409,13 +445,15 @@ class HabitEngine:
         if avg_brightness < 50:
             if self._light_mode_time == 0: self._light_mode_time = now
             elif now - self._light_mode_time > 10:
-                subprocess.Popen("reg add HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize /v AppsUseLightTheme /t REG_DWORD /d 0 /f", shell=True)
+                if sys.platform == "win32":
+                    subprocess.Popen("reg add HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize /v AppsUseLightTheme /t REG_DWORD /d 0 /f", shell=True)
                 self.log_event("🌙 Dark mode activated")
                 self._last_light_mode_change = now; self._light_mode_time = 0
         elif avg_brightness > 150:
             if self._light_mode_time == 0: self._light_mode_time = now
             elif now - self._light_mode_time > 10:
-                subprocess.Popen("reg add HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize /v AppsUseLightTheme /t REG_DWORD /d 1 /f", shell=True)
+                if sys.platform == "win32":
+                    subprocess.Popen("reg add HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize /v AppsUseLightTheme /t REG_DWORD /d 1 /f", shell=True)
                 self.log_event("☀️ Light mode restored")
                 self._last_light_mode_change = now; self._light_mode_time = 0
         else:

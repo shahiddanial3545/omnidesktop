@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QTimer
 from vision_core import VisionCore
 from habit_engine import HabitEngine
-from spatial_features import PaperDashboard, SkeletalTopology, ObjectLearner, AutoPaperDetector, SwipeDetector
+from spatial_features import PaperDashboard, SkeletalTopology, ObjectLearner, AutoPaperDetector, SwipeDetector, CircleDetector
 from stats_tracker import StatsTracker
 from ui_bubble import OmniBubble
 
@@ -29,6 +29,7 @@ class OmniDeskApp:
         self.dashboard = PaperDashboard(corners=self.config['paper_dashboard'].get('corners'), buttons=self.config['paper_dashboard'].get('buttons', []))
         self.topology = SkeletalTopology(tolerance=self.config['system'].get('gesture_tolerance', 0.85))
         self.habit_engine._swipe_detector = SwipeDetector()
+        self.habit_engine._circle_detector = CircleDetector()
         self.obj_learner = ObjectLearner()
         self.auto_paper = AutoPaperDetector()
         self._input_queue = queue.Queue(maxsize=1)
@@ -278,6 +279,7 @@ class OmniDeskApp:
             self.habit_engine.palm_menu(hands)
             self.habit_engine.virtual_desktop_switcher(hands)
             self.habit_engine.window_snap_control(hands)
+            self.habit_engine.app_switcher(hands)
             self.habit_engine.air_scroll(hands)
             self.habit_engine.double_tap_detector(hands)
 

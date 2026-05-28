@@ -108,3 +108,25 @@ class SwipeDetector:
                 self._x_history.clear()
                 return "left" if delta < 0 else "right"
         return None
+
+class CircleDetector:
+    def __init__(self, min_points=20, radius_tolerance=0.08):
+        self.min_points = min_points
+        self.radius_tolerance = radius_tolerance
+        self._path = deque(maxlen=60)
+
+    def update(self, x, y):
+        self._path.append((x, y))
+        if len(self._path) < self.min_points:
+            return False
+        pts = list(self._path)
+        cx = sum(p[0] for p in pts) / len(pts)
+        cy = sum(p[1] for p in pts) / len(pts)
+        dists = [((p[0]-cx)**2 + (p[1]-cy)**2)**0.5 for p in pts]
+        mean_r = sum(dists) / len(dists)
+        if mean_r < 0.05: return False
+        variance = sum((d - mean_r)**2 for d in dists) / len(dists)
+        if variance < self.radius_tolerance * mean_r:
+            self._path.clear()
+            return True
+        return False
