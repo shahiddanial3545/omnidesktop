@@ -43,7 +43,7 @@ class TestUXUpgrades(unittest.TestCase):
         mock_hands = MagicMock()
         mock_hands.multi_hand_landmarks = [MagicMock()]
         mock_hands.multi_hand_landmarks[0].landmark = {0: MagicMock(y=0.1)}
-        
+
         with patch('pyautogui.press') as press_mock:
             self.engine.air_scroll(mock_hands)
             press_mock.assert_not_called()

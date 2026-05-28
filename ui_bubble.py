@@ -2,8 +2,8 @@ import sys
 import cv2
 import numpy as np
 import time
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QLabel, QMenu, QAction, QInputDialog, QLineEdit, QDialog, 
+from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+                             QLabel, QMenu, QAction, QInputDialog, QLineEdit, QDialog,
                              QFormLayout, QSlider, QCheckBox, QListWidget, QScrollArea, QFrame)
 from PyQt5.QtCore import Qt, QPoint, QTimer, pyqtSignal, QSize, QMetaObject
 from PyQt5.QtGui import QImage, QPixmap, QFont
@@ -15,10 +15,10 @@ class SettingsDialog(QDialog):
         # Deep guarantee of required sections
         if 'system' not in self.config: self.config['system'] = {}
         if 'habits' not in self.config: self.config['habits'] = {}
-        for h in ['posture_guardian', 'privacy_shield', 'shush_trigger', 'air_scroll', 'gaze_dimmer', 
+        for h in ['posture_guardian', 'privacy_shield', 'shush_trigger', 'air_scroll', 'gaze_dimmer',
                   'double_tap', 'palm_menu', 'coffee_mug_mute', 'phone_down', 'morning_routine']:
             if h not in self.config['habits']: self.config['habits'][h] = {}
-            
+
         self.setWindowTitle("Omni-Desk Settings")
         self.setMinimumWidth(400)
         self.setStyleSheet("background-color: #2c3e50; color: #ecf0f1;")
@@ -42,7 +42,7 @@ class SettingsDialog(QDialog):
 
         # Habit Thresholds
         form.addRow(QLabel("<b>Habit Thresholds</b>"))
-        
+
         self.posture_timeout = self._create_slider(10, 1200, hab_cfg.get('posture_guardian', {}).get('slouch_timeout', 600))
         form.addRow("Posture Timeout (s):", self.posture_timeout)
 
@@ -100,7 +100,7 @@ class SettingsDialog(QDialog):
         save_btn = QPushButton("Save & Apply")
         save_btn.setStyleSheet("background-color: #2980b9; padding: 10px; border-radius: 5px;")
         save_btn.clicked.connect(self.save_settings)
-        
+
         scroll.setWidget(container)
         layout.addWidget(scroll)
         layout.addWidget(save_btn)
@@ -142,7 +142,7 @@ class ActivityLogDialog(QDialog):
         self.setFixedSize(400, 500)
         self.setStyleSheet("background-color: #2c3e50; color: #ecf0f1;")
         layout = QVBoxLayout()
-        
+
         if focus_score is not None:
             score_label = QLabel(f"Focus Score: {focus_score}/100")
             score_label.setAlignment(Qt.AlignCenter)
@@ -173,7 +173,7 @@ class CameraErrorDialog(QDialog):
 
 class PomodoroTimer(QWidget):
     finished = pyqtSignal()
-    
+
     def __init__(self, minutes=25):
         super().__init__()
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
@@ -227,7 +227,7 @@ class DashboardEditorDialog(QDialog):
         self.list_widget = QListWidget()
         for btn in self.config.get('paper_dashboard', {}).get('buttons', []):
             self.list_widget.addItem(f"{btn['name']} | {btn['rect']} | {btn['macro']}")
-        
+
         layout.addWidget(QLabel("Current Buttons:"))
         layout.addWidget(self.list_widget)
 
@@ -258,7 +258,7 @@ class DashboardEditorDialog(QDialog):
             rect = [float(x.strip()) for x in self.rect_input.text().split(',')]
             macro = self.macro_input.text()
             if len(rect) != 4: raise ValueError
-            
+
             # Update if exists
             buttons = self.config['paper_dashboard'].setdefault('buttons', [])
             for btn in buttons:
@@ -267,7 +267,7 @@ class DashboardEditorDialog(QDialog):
                     break
             else:
                 buttons.append({"name": name, "rect": rect, "macro": macro})
-            
+
             self.refresh_list()
         except:
             pass
@@ -299,10 +299,10 @@ class OnboardingWizard(QDialog):
         self.label.setWordWrap(True)
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setFont(QFont("Arial", 12))
-        
+
         self.next_btn = QPushButton("Next")
         self.next_btn.clicked.connect(self.next_step)
-        
+
         self.layout.addWidget(self.label)
         self.layout.addStretch()
         self.layout.addWidget(self.next_btn)
@@ -354,7 +354,7 @@ class OmniBubble(QWidget):
     camera_retry_requested = pyqtSignal()
     request_camera_error_signal = pyqtSignal()
     request_input_signal = pyqtSignal(str, str)
-    
+
     def __init__(self, config=None):
         super().__init__()
         self.config = config if isinstance(config, dict) else {}
@@ -417,7 +417,7 @@ class OmniBubble(QWidget):
         sett_act = menu.addAction("⚙️ Settings"); wiz_act = menu.addAction("🧙 Onboarding Wizard")
         menu.addSeparator()
         p_act = menu.addAction("👁 Toggle Preview")
-        
+
         action = menu.exec_(self.bubble.mapToGlobal(pos))
         if action == f_act: self.mode_changed.emit("Focus")
         elif action == l_act: self.mode_changed.emit("Lazy")

@@ -22,7 +22,7 @@ python main.py
 ## 🎮 How to Use (Simplified UX)
 
 ### The Floating Bubble
-A small blue bubble appears on your screen. 
+A small blue bubble appears on your screen.
 - **Left-Click:** Move the bubble anywhere.
 - **Right-Click:** Open the **Quick Mode Menu**:
   - **🎯 Focus Mode:** Enables Privacy Shield, Posture Guardian, Phone-Down, and Gaze Guard.
