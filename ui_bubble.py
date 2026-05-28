@@ -337,6 +337,7 @@ class OmniBubble(QWidget):
     show_log_requested = pyqtSignal()
     update_status_signal = pyqtSignal(str)
     update_preview_signal = pyqtSignal(object)
+    show_message_signal = pyqtSignal(str, str, str) # title, message, type (info/warning/error)
     show_stats_requested = pyqtSignal()
     edit_dashboard_requested = pyqtSignal()
     pomodoro_finished = pyqtSignal()
@@ -357,6 +358,7 @@ class OmniBubble(QWidget):
 
     def initUI(self):
         self.pomodoro.finished.connect(self._handle_pomodoro_finished)
+        self.show_message_signal.connect(self.show_message_box)
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.layout = QVBoxLayout()
@@ -444,6 +446,15 @@ class OmniBubble(QWidget):
     def show_log(self, log_data, focus_score=None):
         dlg = ActivityLogDialog(log_data, focus_score, self)
         dlg.exec_()
+
+    def show_message_box(self, title, message, msg_type="info"):
+        from PyQt5.QtWidgets import QMessageBox
+        if msg_type == "info":
+            QMessageBox.information(self, title, message)
+        elif msg_type == "warning":
+            QMessageBox.warning(self, title, message)
+        elif msg_type == "error":
+            QMessageBox.critical(self, title, message)
 
     def get_macro_input(self, title="Action", label="Command:"):
         text, ok = QInputDialog.getText(self, title, label, QLineEdit.Normal, "")

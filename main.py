@@ -104,6 +104,64 @@ class OmniDeskApp:
         self.mode = mode; self.habit_engine.set_mode(mode)
         self.ui.update_status_signal.emit(f"Mode: {mode}")
 
+    def trigger_gesture_recording(self):
+        def recording_worker():
+            try:
+                self.ui.update_status_signal.emit("Recording in 3s... Hold steady!")
+                time.sleep(3)
+
+                frame = self.vision.get_frame()
+                if frame is None:
+                    self.ui.show_message_signal.emit("Error", "Camera frame not accessible!", "warning")
+                    return
+
+                # We need to process the frame to get landmarks
+                results = self.vision.process(frame, features=['hands'])
+                hands = results.get('hands')
+
+                if hands and hands.multi_hand_landmarks:
+                    raw_landmarks = hands.multi_hand_landmarks[0]
+                    spatial_signature = self.topology.get_signature(raw_landmarks)
+
+                    if spatial_signature is None:
+                        self.ui.show_message_signal.emit("Retry", "Hand was too blurry. Try again!", "warning")
+                        return
+
+                    user_action = self._get_input_threadsafe("AI Gesture Integration",
+                        "What feature or action do you want to integrate with this gesture?\n\nExamples:\n- https://youtube.com\n- notepad.exe")
+
+                    if user_action and user_action.strip():
+                        final_macro = user_action.strip()
+                        if final_macro.startswith("http://") or final_macro.startswith("https://"):
+                            final_macro = f"start chrome {final_macro}"
+                        elif final_macro.endswith(".exe") or " " not in final_macro:
+                            # Basic auto-correct for common commands
+                            if not (final_macro.startswith("start ") or final_macro.startswith("python ")):
+                                final_macro = f"start {final_macro}"
+
+                        new_gesture_entry = {
+                            "name": f"Custom_Gesture_{int(time.time())}",
+                            "signature": spatial_signature,
+                            "macro": final_macro
+                        }
+
+                        if "custom_gestures" not in self.config:
+                            self.config["custom_gestures"] = []
+
+                        self.config["custom_gestures"].append(new_gesture_entry)
+                        self.save_config()
+
+                        self.ui.show_message_signal.emit("Success!", f"Gesture successfully mapped to: {final_macro}", "info")
+                    else:
+                        self.ui.update_status_signal.emit("Recording Cancelled")
+                else:
+                    self.ui.show_message_signal.emit("No Hand Detected", "Webcam could not find your hand.", "warning")
+            except Exception as e:
+                print(f"Error compiling custom gesture profile: {e}")
+                self.ui.show_message_signal.emit("Error", f"Recording failed: {str(e)}", "error")
+
+        threading.Thread(target=recording_worker, daemon=True).start()
+
     def handle_show_stats(self):
         self.stats.generate_report()
         self.habit_engine.speak("Stats report generated")
@@ -116,6 +174,9 @@ class OmniDeskApp:
             self.habit_engine.speak("Camera reconnected")
         else:
             self.ui.show_camera_error()
+
+    def start_gesture_recording(self):
+        self.trigger_gesture_recording()
 
     def handle_config_update(self, new_config):
         self.config = new_config
@@ -136,7 +197,6 @@ class OmniDeskApp:
             self.habit_engine._voice_enabled = False
             self.ui.update_status_signal.emit("Voice Mode OFF")
 
-    def start_gesture_recording(self): self.recording_gesture = True; self.ui.update_status_signal.emit("Perform gesture now...")
     def start_object_learning(self): self.learning_object = True; self.ui.update_status_signal.emit("Hold object in center...")
 
     def run_vision(self):
@@ -199,12 +259,7 @@ class OmniDeskApp:
                 self.habit_engine.ambient_light_monitor(frame)
 
             # 4. GESTURE & INTERACTION (Immediate)
-            if self.recording_gesture and hands and hands.multi_hand_landmarks:
-                sig = self.topology.get_signature(hands.multi_hand_landmarks[0])
-                if sig:
-                    self.recording_gesture = False; self.habit_engine.play_chime("success")
-                    cmd = self._get_input_threadsafe("Gesture Recorded", "Enter Command/URL:")
-                    if cmd: self.config['custom_gestures'].append({"signature": sig, "macro": cmd}); self.save_config(); self.ui.update_status_signal.emit("Gesture Saved")
+            # Old recording logic removed as it's now handled by trigger_gesture_recording worker thread
 
             if self.learning_object:
                 profile = self.obj_learner.get_hsv_profile(frame)
