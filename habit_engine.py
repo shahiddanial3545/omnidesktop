@@ -49,6 +49,11 @@ class HabitEngine:
         self._alt_tab_open = False
         self._last_switcher_time = 0
         self._switcher_prev_x = None
+        self._rotation_detector = None  # injected from main
+        self._last_volume_time = 0
+        self._volume_step = 2  # percent per rotation
+        self._last_media_time = 0
+        self._thumb_state_prev = None
         self._air_mouse_enabled = False
         self._mouse_smooth_x = None
         self._mouse_smooth_y = None
@@ -463,7 +468,12 @@ class HabitEngine:
         if not self.config.get('habits', {}).get('app_switcher', {}).get('enabled', True): return
 
         # Gaze check
-        if not self.check_gaze_intent(): return
+        if not self.check_gaze_intent():
+            if self._alt_tab_open:
+                pyautogui.press('return')
+                pyautogui.keyUp('alt')
+                self._alt_tab_open = False
+            return
 
         if not hand_results or not hasattr(hand_results, 'multi_hand_landmarks') or not hand_results.multi_hand_landmarks:
             if self._alt_tab_open:
@@ -535,6 +545,78 @@ class HabitEngine:
             self.log_event("🖱️ Air Mouse: Right Click")
             self._last_click_time = now
         self._was_two_pinching = is_two_pinching
+
+    def volume_dial(self, hand_results):
+        if self.mode == "Off": return
+        if not self.config.get('habits', {}).get('volume_dial', {}).get('enabled', True): return
+
+        # Gaze check
+        if not self.check_gaze_intent(sensitivity=0.4): return
+
+        if not hand_results or not hasattr(hand_results, 'multi_hand_landmarks') or not hand_results.multi_hand_landmarks:
+            return
+
+        lms = hand_results.multi_hand_landmarks[0].landmark
+        if self._rotation_detector:
+            direction = self._rotation_detector.update(lms)
+            now = time.time()
+            if now - self._last_volume_time < 0.3: return
+
+            if direction == "clockwise":
+                pyautogui.press('volumeup')
+                pyautogui.press('volumeup')
+                self.log_event("🔊 Volume Up (dial)")
+                self._last_volume_time = now
+            elif direction == "anticlockwise":
+                pyautogui.press('volumedown')
+                pyautogui.press('volumedown')
+                self.log_event("🔉 Volume Down (dial)")
+                self._last_volume_time = now
+
+    def _get_thumb_gesture(self, landmarks):
+        thumb_tip = landmarks[4]
+        index_mcp = landmarks[5]
+        wrist = landmarks[0]
+
+        if thumb_tip.y < wrist.y - 0.15 and thumb_tip.y < index_mcp.y:
+            return "up"
+        if thumb_tip.x < wrist.x - 0.12 and abs(thumb_tip.y - wrist.y) < 0.08:
+            return "left"
+        if thumb_tip.x > wrist.x + 0.12 and abs(thumb_tip.y - wrist.y) < 0.08:
+            return "right"
+        return None
+
+    def media_control(self, hand_results):
+        if self.mode == "Off": return
+        if not self.config.get('habits', {}).get('media_control', {}).get('enabled', True): return
+
+        if not hand_results or not hasattr(hand_results, 'multi_hand_landmarks') or not hand_results.multi_hand_landmarks:
+            self._thumb_state_prev = None
+            return
+
+        lms = hand_results.multi_hand_landmarks[0].landmark
+        gesture = self._get_thumb_gesture(lms)
+        now = time.time()
+
+        if gesture == self._thumb_state_prev: return
+        if gesture is None:
+            self._thumb_state_prev = None
+            return
+
+        if now - self._last_media_time < 1.5: return
+
+        if gesture == "up":
+            pyautogui.press('playpause')
+            self.log_event("⏯️ Media: Play/Pause")
+        elif gesture == "left":
+            pyautogui.press('prevtrack')
+            self.log_event("⏮️ Media: Previous")
+        elif gesture == "right":
+            pyautogui.press('nexttrack')
+            self.log_event("⏭️ Media: Next")
+
+        self._thumb_state_prev = gesture
+        self._last_media_time = now
 
     def voice_command_listener(self, callback):
         try:

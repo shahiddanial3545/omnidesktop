@@ -159,3 +159,39 @@ class CircleDetector:
             self._path.clear()
             return True
         return False
+
+class RotationDetector:
+    def __init__(self, angle_threshold=25.0, history=15):
+        self.angle_threshold = angle_threshold
+        self._angle_history = deque(maxlen=history)
+
+    def _get_angle(self, landmarks):
+        # Use wrist(0) to middle_mcp(9) vector angle
+        wrist = landmarks[0]
+        mid = landmarks[9]
+        dx = mid.x - wrist.x
+        dy = mid.y - wrist.y
+        import math
+        return math.degrees(math.atan2(dy, dx))
+
+    def update(self, landmarks):
+        angle = self._get_angle(landmarks)
+        self._angle_history.append(angle)
+        if len(self._angle_history) < 2:
+            return None
+        # Unwrap angle differences to handle 360 crossing
+        import math
+        total_delta = 0
+        hist = list(self._angle_history)
+        for i in range(1, len(hist)):
+            d = hist[i] - hist[i-1]
+            if d > 180: d -= 360
+            if d < -180: d += 360
+            total_delta += d
+        if total_delta > self.angle_threshold:
+            self._angle_history.clear()
+            return "clockwise"
+        if total_delta < -self.angle_threshold:
+            self._angle_history.clear()
+            return "anticlockwise"
+        return None

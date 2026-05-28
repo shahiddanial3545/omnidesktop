@@ -433,6 +433,7 @@ class OmniBubble(QWidget):
     show_log_requested = pyqtSignal()
     update_status_signal = pyqtSignal(str)
     update_preview_signal = pyqtSignal(object)
+    update_intent_signal = pyqtSignal(str, int) # pose_name, intent_percent
     show_message_signal = pyqtSignal(str, str, str) # title, message, type (info/warning/error)
     show_stats_requested = pyqtSignal()
     edit_dashboard_requested = pyqtSignal()
@@ -458,9 +459,17 @@ class OmniBubble(QWidget):
         self.pomodoro.finished.connect(self._handle_pomodoro_finished)
         self.show_message_signal.connect(self.show_message_box)
         self.request_camera_error_signal.connect(self.show_camera_error)
+        self.update_intent_signal.connect(self.update_intent_display)
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.layout = QVBoxLayout()
+
+        self.intent_label = QLabel("", self)
+        self.intent_label.setStyleSheet("color: #00adb5; font-weight: bold; background: rgba(0,0,0,100); border-radius: 5px;")
+        self.intent_label.setAlignment(Qt.AlignCenter)
+        self.intent_label.hide()
+        self.layout.addWidget(self.intent_label)
+
         self.bubble = QPushButton("O", self)
         self.bubble.setFixedSize(50, 50)
         self.bubble.setStyleSheet("background-color: rgba(0, 150, 255, 180); color: white; border-radius: 25px; font-size: 20px; font-weight: bold;")
@@ -583,6 +592,13 @@ class OmniBubble(QWidget):
     def update_status(self, text):
         self.status_label.setText(text); self.status_label.show()
         QTimer.singleShot(3000, lambda: self.status_label.hide() if self.status_label.text() == text else None)
+
+    def update_intent_display(self, pose_name, percent):
+        if percent > 0:
+            self.intent_label.setText(f"{pose_name} ({percent}%)")
+            self.intent_label.show()
+        else:
+            self.intent_label.hide()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv); ex = OmniBubble(); sys.exit(app.exec_())

@@ -23,6 +23,8 @@
         "virtual_desktop": {"enabled": true},
         "window_snap": {"enabled": true},
         "app_switcher": {"enabled": true},
+        "volume_dial": {"enabled": true, "step": 2},
+        "media_control": {"enabled": true},
         "air_mouse": {"enabled": false}
     },
     "system": {

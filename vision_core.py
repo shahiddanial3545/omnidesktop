@@ -233,6 +233,24 @@ class VisionCore:
                 for idx, lm in enumerate(face_landmarks.landmark):
                     key = f"face_{face_id}_{idx}"; lm.x = self._get_filter(key+"_x").apply(lm.x); lm.y = self._get_filter(key+"_y").apply(lm.y); lm.z = self._get_filter(key+"_z").apply(lm.z)
 
+    def get_hand_pose(self, hand_landmarks):
+        """Classifies hand pose based on finger extension."""
+        if not hand_landmarks: return "Unknown"
+        lm = hand_landmarks.landmark
+
+        # Helper to check if finger is extended (tip y < mcp y)
+        # Finger tips: 8, 12, 16, 20. MCPs: 5, 9, 13, 17
+        is_index = lm[8].y < lm[6].y
+        is_middle = lm[12].y < lm[10].y
+        is_ring = lm[16].y < lm[14].y
+        is_pinky = lm[20].y < lm[18].y
+
+        if is_index and not is_middle and not is_ring and not is_pinky: return "Pointing"
+        if is_index and is_middle and not is_ring and not is_pinky: return "Victory"
+        if is_index and is_middle and is_ring and is_pinky: return "Open"
+        if not is_index and not is_middle and not is_ring and not is_pinky: return "Fist"
+        return "Custom"
+
     def process(self, frame, features=None, use_kalman=False):
         if features is None: features = ['hands', 'pose', 'face_detection', 'face_mesh']
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -241,6 +259,8 @@ class VisionCore:
             res = self.hands.process(rgb_frame)
             self.smooth_landmarks(res, 'hands', use_kalman=use_kalman)
             results['hands'] = res
+            if res and res.multi_hand_landmarks:
+                results['pose_name'] = self.get_hand_pose(res.multi_hand_landmarks[0])
         if 'pose' in features:
             res = self.pose.process(rgb_frame)
             self.smooth_landmarks(res, 'pose')

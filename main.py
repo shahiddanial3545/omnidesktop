@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QTimer
 from vision_core import VisionCore
 from habit_engine import HabitEngine
-from spatial_features import PaperDashboard, SkeletalTopology, ObjectLearner, AutoPaperDetector, SwipeDetector, CircleDetector
+from spatial_features import PaperDashboard, SkeletalTopology, ObjectLearner, AutoPaperDetector, SwipeDetector, CircleDetector, RotationDetector
 from stats_tracker import StatsTracker
 from ui_bubble import OmniBubble
 
@@ -31,6 +31,7 @@ class OmniDeskApp:
         self.topology = SkeletalTopology(tolerance=self.config['system'].get('gesture_tolerance', 0.85))
         self.habit_engine._swipe_detector = SwipeDetector()
         self.habit_engine._circle_detector = CircleDetector()
+        self.habit_engine._rotation_detector = RotationDetector()
 
         # Gesture Intent Tracking
         self._last_sig = None
@@ -323,6 +324,8 @@ class OmniDeskApp:
             self.habit_engine.virtual_desktop_switcher(hands)
             self.habit_engine.window_snap_control(hands)
             self.habit_engine.app_switcher(hands)
+            self.habit_engine.volume_dial(hands)
+            self.habit_engine.media_control(hands)
             self.habit_engine.air_mouse(hands, self._screen_w, self._screen_h)
             self.habit_engine.air_scroll(hands)
             self.habit_engine.double_tap_detector(hands)
@@ -339,14 +342,25 @@ class OmniDeskApp:
                         self._stability_frames = 0
                 self._last_sig = curr_sig
 
+                # Update UI intent feedback
+                pose_name = results.get('pose_name', 'Hand')
+                intent_percent = min(100, int((self._stability_frames / 5.0) * 100))
+                self.ui.update_intent_signal.emit(pose_name, intent_percent)
+
                 # Only trigger if stable for 5 frames (Intent)
                 if self._stability_frames >= 5:
+                    triggered = False
                     for g in self.config.get('custom_gestures', []):
                         if self.topology.match(curr_sig, g['signature']) > self.topology.tolerance:
                             self.stats.log_stat("gestures_used", 1)
                             self.habit_engine.play_chime("detect"); subprocess.Popen(g['macro'], shell=True); time.sleep(2)
                             self._stability_frames = 0
+                            triggered = True
                             break
+                    if triggered:
+                        self.ui.update_intent_signal.emit(pose_name, 0)
+            else:
+                self.ui.update_intent_signal.emit("", 0)
 
                 idx = hands.multi_hand_landmarks[0].landmark[8]
                 macro = self.dashboard.check_tap((idx.x * self.vision.width, idx.y * self.vision.height))
