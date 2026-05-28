@@ -3,7 +3,10 @@ import json
 import threading
 import time
 import cv2
-import pyttsx3
+try:
+    import pyttsx3
+except ImportError:
+    pyttsx3 = None
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QTimer
 from vision_core import VisionCore
@@ -14,16 +17,20 @@ from ui_bubble import OmniBubble
 class VoiceManager:
     def __init__(self):
         self.engine = None
-        try:
-            self.engine = pyttsx3.init()
-        except:
-            print("Voice engine initialization failed. Continuing without voice.")
+        if pyttsx3:
+            try:
+                self.engine = pyttsx3.init()
+            except:
+                print("Voice engine initialization failed. Continuing without voice.")
 
     def speak(self, text):
         if self.engine:
             def _speak():
-                self.engine.say(text)
-                self.engine.runAndWait()
+                try:
+                    self.engine.say(text)
+                    self.engine.runAndWait()
+                except:
+                    pass
             threading.Thread(target=_speak, daemon=True).start()
 
 class OmniDeskApp:
@@ -85,17 +92,17 @@ class OmniDeskApp:
             results = self.vision.process(frame)
 
             # 2. Habit Triggers
-            self.habit_engine.posture_guardian(results['pose'])
-            self.habit_engine.privacy_shield(results['face_detection'])
-            self.habit_engine.shush_trigger(results['hands'], results['face_mesh'])
-            self.habit_engine.air_scroll(results['hands'])
-            self.habit_engine.double_tap_detector(results['hands'])
-            self.habit_engine.morning_routine(results['face_detection'])
+            self.habit_engine.posture_guardian(results.get('pose'))
+            self.habit_engine.privacy_shield(results.get('face_detection'))
+            self.habit_engine.shush_trigger(results.get('hands'), results.get('face_mesh'))
+            self.habit_engine.air_scroll(results.get('hands'))
+            self.habit_engine.double_tap_detector(results.get('hands'))
+            self.habit_engine.morning_routine(results.get('face_detection'))
             self.habit_engine.phone_down_detector(frame)
             self.habit_engine.coffee_mug_mute(frame)
 
             # 3. Spatial Macros
-            if results['hands'].multi_hand_landmarks:
+            if results.get('hands') and hasattr(results['hands'], 'multi_hand_landmarks') and results['hands'].multi_hand_landmarks:
                 idx_finger = results['hands'].multi_hand_landmarks[0].landmark[8]
                 tip_coords = (idx_finger.x * self.vision.width, idx_finger.y * self.vision.height)
                 macro = self.dashboard.check_tap(tip_coords)
@@ -105,16 +112,14 @@ class OmniDeskApp:
 
             # 4. Update UI Preview
             if self.ui.preview.isVisible():
-                # Draw landmarks on a copy for preview
                 preview_frame = frame.copy()
-                if results['hands'].multi_hand_landmarks:
+                if results.get('hands') and hasattr(results['hands'], 'multi_hand_landmarks') and results['hands'].multi_hand_landmarks:
                     for lm in results['hands'].multi_hand_landmarks[0].landmark:
                         cv2.circle(preview_frame, (int(lm.x*self.vision.width), int(lm.y*self.vision.height)), 3, (0, 255, 0), -1)
                 if self.dashboard.corners:
                     for pt in self.dashboard.corners:
                         cv2.circle(preview_frame, tuple(map(int, pt)), 5, (255, 0, 0), -1)
 
-                # Convert BGR to RGB for Qt
                 preview_frame = cv2.cvtColor(preview_frame, cv2.COLOR_BGR2RGB)
                 self.ui.preview.update_frame(preview_frame)
 

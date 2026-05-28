@@ -32,15 +32,28 @@ def load_mp_solution(name):
         pass
     raise ImportError(f"Could not load MediaPipe solution: {name}.")
 
+# Robust Dummy Class to prevent NoneType attribute errors
+class MediaPipeDummy:
+    def __init__(self, *args, **kwargs): pass
+    def __call__(self, *args, **kwargs): return self
+    def __getattr__(self, name): return self
+    def process(self, *args, **kwargs):
+        class DummyResults:
+            def __init__(self):
+                self.multi_hand_landmarks = None
+                self.pose_landmarks = None
+                self.detections = None
+                self.multi_face_landmarks = None
+        return DummyResults()
+
 try:
     mp_hands = load_mp_solution('hands')
     mp_pose = load_mp_solution('pose')
     mp_face_detection = load_mp_solution('face_detection')
     mp_face_mesh = load_mp_solution('face_mesh')
 except ImportError:
-    class Dummy:
-        def __getattr__(self, name): return lambda *args, **kwargs: None
-    mp_hands = mp_pose = mp_face_detection = mp_face_mesh = Dummy()
+    print("WARNING: MediaPipe could not be loaded. Running in dummy mode.")
+    mp_hands = mp_pose = mp_face_detection = mp_face_mesh = MediaPipeDummy()
 
 class EMAFilter:
     def __init__(self, alpha=0.3):
@@ -67,8 +80,6 @@ class VisionCore:
         self._pose = None
         self._face_detection = None
         self._face_mesh = None
-
-        # Landmark filters: dict mapping landmark_id to EMAFilter
         self.filters = {}
 
     def _get_filter(self, key):
@@ -79,25 +90,37 @@ class VisionCore:
     @property
     def hands(self):
         if self._hands is None:
-            self._hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.5, min_tracking_confidence=0.5)
+            try:
+                self._hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.5, min_tracking_confidence=0.5)
+            except:
+                self._hands = MediaPipeDummy()
         return self._hands
 
     @property
     def pose(self):
         if self._pose is None:
-            self._pose = mp_pose.Pose(static_image_mode=False, model_complexity=0, min_detection_confidence=0.5, min_tracking_confidence=0.5)
+            try:
+                self._pose = mp_pose.Pose(static_image_mode=False, model_complexity=0, min_detection_confidence=0.5, min_tracking_confidence=0.5)
+            except:
+                self._pose = MediaPipeDummy()
         return self._pose
 
     @property
     def face_detection(self):
         if self._face_detection is None:
-            self._face_detection = mp_face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5)
+            try:
+                self._face_detection = mp_face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5)
+            except:
+                self._face_detection = MediaPipeDummy()
         return self._face_detection
 
     @property
     def face_mesh(self):
         if self._face_mesh is None:
-            self._face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_landmarks=False, min_detection_confidence=0.5, min_tracking_confidence=0.5)
+            try:
+                self._face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_landmarks=False, min_detection_confidence=0.5, min_tracking_confidence=0.5)
+            except:
+                self._face_mesh = MediaPipeDummy()
         return self._face_mesh
 
     def get_frame(self):
@@ -106,22 +129,21 @@ class VisionCore:
         return cv2.flip(frame, 1)
 
     def smooth_landmarks(self, results, feature_type):
-        if feature_type == 'hands' and results.multi_hand_landmarks:
+        if not results: return
+        if feature_type == 'hands' and hasattr(results, 'multi_hand_landmarks') and results.multi_hand_landmarks:
             for hand_id, hand_landmarks in enumerate(results.multi_hand_landmarks):
                 for idx, lm in enumerate(hand_landmarks.landmark):
                     key = f"hand_{hand_id}_{idx}"
                     lm.x = self._get_filter(key + "_x").apply(lm.x)
                     lm.y = self._get_filter(key + "_y").apply(lm.y)
                     lm.z = self._get_filter(key + "_z").apply(lm.z)
-
-        elif feature_type == 'pose' and results.pose_landmarks:
+        elif feature_type == 'pose' and hasattr(results, 'pose_landmarks') and results.pose_landmarks:
             for idx, lm in enumerate(results.pose_landmarks.landmark):
                 key = f"pose_{idx}"
                 lm.x = self._get_filter(key + "_x").apply(lm.x)
                 lm.y = self._get_filter(key + "_y").apply(lm.y)
                 lm.z = self._get_filter(key + "_z").apply(lm.z)
-
-        elif feature_type == 'face_mesh' and results.multi_face_landmarks:
+        elif feature_type == 'face_mesh' and hasattr(results, 'multi_face_landmarks') and results.multi_face_landmarks:
             for face_id, face_landmarks in enumerate(results.multi_face_landmarks):
                 for idx, lm in enumerate(face_landmarks.landmark):
                     key = f"face_{face_id}_{idx}"
@@ -133,34 +155,31 @@ class VisionCore:
         if features is None: features = ['hands', 'pose', 'face_detection', 'face_mesh']
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = {}
+
+        # Safe processing calls
         if 'hands' in features:
-            res = self.hands.process(rgb_frame)
-            self.smooth_landmarks(res, 'hands')
-            results['hands'] = res
+            h = self.hands
+            if h:
+                res = h.process(rgb_frame)
+                self.smooth_landmarks(res, 'hands')
+                results['hands'] = res
         if 'pose' in features:
-            res = self.pose.process(rgb_frame)
-            self.smooth_landmarks(res, 'pose')
-            results['pose'] = res
+            p = self.pose
+            if p:
+                res = p.process(rgb_frame)
+                self.smooth_landmarks(res, 'pose')
+                results['pose'] = res
         if 'face_detection' in features:
-            results['face_detection'] = self.face_detection.process(rgb_frame)
+            fd = self.face_detection
+            if fd:
+                results['face_detection'] = fd.process(rgb_frame)
         if 'face_mesh' in features:
-            res = self.face_mesh.process(rgb_frame)
-            self.smooth_landmarks(res, 'face_mesh')
-            results['face_mesh'] = res
+            fm = self.face_mesh
+            if fm:
+                res = fm.process(rgb_frame)
+                self.smooth_landmarks(res, 'face_mesh')
+                results['face_mesh'] = res
         return results
 
     def release(self):
         self.cap.release()
-
-if __name__ == "__main__":
-    vc = VisionCore()
-    start_time = time.time()
-    frames = 0
-    while frames < 10:
-        frame = vc.get_frame()
-        if frame is not None:
-            res = vc.process(frame)
-            frames += 1
-            print(f"Processed frame {frames}")
-    vc.release()
-    print(f"FPS: {frames / (time.time() - start_time)}")
