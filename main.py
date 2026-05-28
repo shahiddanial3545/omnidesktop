@@ -77,11 +77,13 @@ class OmniDeskApp:
 
     def start(self, ui):
         self.running = True; self.ui = ui
+        self.update_voice_state()
         self.ui.mode_changed.connect(self.handle_mode_change)
         self.ui.record_gesture.connect(self.start_gesture_recording)
         self.ui.learn_object.connect(self.start_object_learning)
-        self.ui.show_log_requested.connect(lambda: self.ui.show_log(self.habit_engine.activity_log))
+        self.ui.show_log_requested.connect(lambda: self.ui.show_log(self.habit_engine.activity_log, self.stats.get_today_stats().get("focus_score")))
         self.ui.show_stats_requested.connect(self.handle_show_stats)
+        self.ui.edit_dashboard_requested.connect(self.ui.open_dashboard_editor)
         self.ui.camera_retry_requested.connect(self.handle_camera_retry)
         self.ui.pomodoro_finished.connect(lambda: self.habit_engine.speak("Pomodoro cycle complete. Take a break."))
         self.ui.config_updated.connect(self.handle_config_update)
@@ -119,7 +121,20 @@ class OmniDeskApp:
         self.config = new_config
         self.save_config()
         self.habit_engine.config = new_config
+        self.dashboard.buttons = self.config['paper_dashboard'].get('buttons', [])
         self.topology.tolerance = self.config['system'].get('gesture_tolerance', 0.85)
+        self.update_voice_state()
+
+    def update_voice_state(self):
+        enabled = self.config.get('system', {}).get('voice_enabled', False)
+        if enabled and not self.habit_engine._voice_enabled:
+            self.habit_engine._voice_enabled = True
+            self.habit_engine._voice_thread = threading.Thread(target=self.habit_engine.voice_command_listener, args=(self.handle_mode_change,), daemon=True)
+            self.habit_engine._voice_thread.start()
+            self.ui.update_status_signal.emit("Voice Mode ON")
+        elif not enabled and self.habit_engine._voice_enabled:
+            self.habit_engine._voice_enabled = False
+            self.ui.update_status_signal.emit("Voice Mode OFF")
 
     def start_gesture_recording(self): self.recording_gesture = True; self.ui.update_status_signal.emit("Perform gesture now...")
     def start_object_learning(self): self.learning_object = True; self.ui.update_status_signal.emit("Hold object in center...")
@@ -179,6 +194,10 @@ class OmniDeskApp:
                 self.habit_engine.coffee_mug_mute(frame)
                 self.habit_engine.check_custom_objects(frame)
 
+            # Ambient Light Monitor (Every 15 frames)
+            if frame_count % 15 == 0:
+                self.habit_engine.ambient_light_monitor(frame)
+
             # 4. GESTURE & INTERACTION (Immediate)
             if self.recording_gesture and hands and hands.multi_hand_landmarks:
                 sig = self.topology.get_signature(hands.multi_hand_landmarks[0])
@@ -223,6 +242,15 @@ class OmniDeskApp:
     def stop(self): self.running = False; self.vision.release()
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv); ui = OmniBubble(); omni = OmniDeskApp(); omni.start(ui)
+    app = QApplication(sys.argv)
+    omni = OmniDeskApp()
+    ui = OmniBubble(config=omni.config)
+    if not omni.config.get("system", {}).get("onboarding_done", False):
+        from ui_bubble import OnboardingWizard
+        wiz = OnboardingWizard(parent=ui)
+        wiz.exec_()
+        omni.config.setdefault("system", {})["onboarding_done"] = True
+        omni.save_config()
+    omni.start(ui)
     try: sys.exit(app.exec_())
     finally: omni.stop()

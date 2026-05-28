@@ -39,6 +39,25 @@ class HabitEngine:
         self.is_dimmed = False
         self.pinch_start_times = {"index": 0, "middle": 0, "ring": 0}
 
+        # Feature A: Blink Detection
+        self._blink_count = 0
+        self._blink_window_start = time.time()
+        self._low_blink_consecutive_minutes = 0
+        self._last_blink_reminder = 0
+        self._is_blinking = False
+
+        # Feature C: Ambient Light
+        self._light_mode_time = 0
+        self._last_light_mode_change = 0
+
+        # Feature D: Focus Score
+        self._session_start = None
+        self._session_events = []
+
+        # Feature B: Voice Command Mode
+        self._voice_thread = None
+        self._voice_enabled = False
+
         # New cooldown and tracking variables
         self._last_shush_time = 0
         self._last_privacy_time = 0
@@ -59,9 +78,33 @@ class HabitEngine:
             self.activity_log.pop(0)
 
     def set_mode(self, mode):
+        old_mode = self.mode
         self.mode = mode
         self.log_event(f"Mode changed to: {mode}")
         self.play_chime("success")
+
+        if old_mode == "Focus" and mode != "Focus":
+            self.calculate_focus_score()
+        elif mode == "Focus":
+            self._session_start = time.time()
+            self._session_events = []
+
+    def calculate_focus_score(self):
+        if not self._session_start: return
+        score = 100
+        posture_count = self._session_events.count("posture")
+        privacy_count = self._session_events.count("privacy")
+        phone_count = self._session_events.count("phone")
+
+        score -= min(posture_count * 10, 40)
+        score -= privacy_count * 5
+        score -= phone_count * 15
+        score = max(0, score)
+
+        if self.stats:
+            self.stats.log_stat("focus_score", score)
+        self.log_event(f"Focus session ended. Score: {score}/100")
+        self._session_start = None
 
     def speak(self, text):
         self.play_chime(message=text)
@@ -95,6 +138,33 @@ class HabitEngine:
                 self._safe_macro(sbc.set_brightness, 100)
                 self.is_dimmed = False
                 self.log_event("Screen brightness restored (Gaze detected)")
+
+            # Blink Detection logic
+            landmarks = face_results.multi_face_landmarks[0].landmark
+            # 159: upper eyelid, 145: lower eyelid
+            dist = np.sqrt((landmarks[159].x - landmarks[145].x)**2 + (landmarks[159].y - landmarks[145].y)**2)
+            if dist < 0.01: # Threshold for blink
+                if not self._is_blinking:
+                    self._blink_count += 1
+                    self._is_blinking = True
+            else:
+                self._is_blinking = False
+
+            now = time.time()
+            if now - self._blink_window_start > 60: # 1 minute window
+                if self._blink_count < 10: # Low blink rate
+                    self._low_blink_consecutive_minutes += 1
+                else:
+                    self._low_blink_consecutive_minutes = 0
+
+                if self._low_blink_consecutive_minutes >= 2:
+                    if now - self._last_blink_reminder > 300: # 5 minute cooldown
+                        self.speak("Remember to blink")
+                        self.log_event("👁 Blink reminder issued")
+                        self._last_blink_reminder = now
+
+                self._blink_count = 0
+                self._blink_window_start = now
         else:
             if not self.is_dimmed and time.time() - self.last_eye_contact > self.config.get('habits', {}).get('gaze_dimmer', {}).get('away_timeout', 5):
                 self._safe_macro(sbc.set_brightness, self.config.get('habits', {}).get('gaze_dimmer', {}).get('dim_level', 10))
@@ -115,9 +185,15 @@ class HabitEngine:
                     if self.pinch_start_times[name] == 0: self.pinch_start_times[name] = time.time()
                     elif time.time() - self.pinch_start_times[name] > 0.5:
                         self.play_chime("detect")
-                        if name == "index": self._safe_macro(pyautogui.hotkey, 'ctrl', 't')
-                        elif name == "middle": self._safe_macro(pyautogui.press, 'volumemute')
-                        elif name == "ring": self._safe_macro(pyautogui.hotkey, 'win', 'd')
+                    if name == "index":
+                        self._safe_macro(pyautogui.hotkey, 'ctrl', 't')
+                        self.log_event(f"🖐 Palm menu: {name} pinch")
+                    elif name == "middle":
+                        self._safe_macro(pyautogui.press, 'volumemute')
+                        self.log_event(f"🖐 Palm menu: {name} pinch")
+                    elif name == "ring":
+                        self._safe_macro(pyautogui.hotkey, 'win', 'd')
+                        self.log_event(f"🖐 Palm menu: {name} pinch")
                         self.pinch_start_times[name] = time.time() + 2
                 else:
                     self.pinch_start_times[name] = 0
@@ -132,6 +208,7 @@ class HabitEngine:
                     self.last_slouch_time = time.time(); self.is_slouching = True
                     self.speak("Please fix your posture")
                     self.log_event("Slouching detected")
+                    self._session_events.append("posture")
                     if self.stats: self.stats.log_stat("posture_alerts", 1)
                 if time.time() - self.last_slouch_time > self.config.get('habits', {}).get('posture_guardian', {}).get('slouch_timeout', 600):
                     self._safe_macro(sbc.set_brightness, 20)
@@ -148,6 +225,8 @@ class HabitEngine:
             now = time.time()
             if now - self._last_privacy_time > 5.0:
                 self._last_privacy_time = now
+                self.log_event("🔒 Privacy Shield activated")
+                self._session_events.append("privacy")
                 self.speak("Privacy shield activated")
                 self._safe_macro(pyautogui.hotkey, 'win', 'd')
 
@@ -164,6 +243,7 @@ class HabitEngine:
                 now = time.time()
                 if now - self._last_shush_time > 3.0:
                     self._last_shush_time = now
+                    self.log_event("🤫 Shush Trigger fired")
                     self.speak("Muting microphone")
                     self._safe_macro(pyautogui.press, 'volumemute')
                     self._safe_macro(pyautogui.hotkey, 'win', 'd')
@@ -187,7 +267,10 @@ class HabitEngine:
                 v = (y - self.last_y_pos) / (t - self.last_y_time) if t > self.last_y_time else 0
                 if v > self.config.get('habits', {}).get('double_tap', {}).get('velocity_threshold', 0.02):
                     if t - self.last_tap_time < 0.5:
-                        self.play_chime("success"); self._safe_macro(pyautogui.press, 'space'); self.last_tap_time = 0
+                        self.play_chime("success")
+                        self._safe_macro(pyautogui.press, 'space')
+                        self.log_event("👆 Double tap detected")
+                        self.last_tap_time = 0
                     else: self.last_tap_time = t
             self.last_y_pos = y; self.last_y_time = t
 
@@ -200,7 +283,11 @@ class HabitEngine:
         x1, y1, x2, y2 = int(roi[0]*w), int(roi[1]*h), int(roi[2]*w), int(roi[3]*h)
         fm = cv2.Laplacian(cv2.cvtColor(frame[y1:y2, x1:x2], cv2.COLOR_BGR2GRAY), cv2.CV_64F).var()
         if fm < 100:
-            if not self.phone_present: self.play_chime("detect"); self._safe_macro(pyautogui.press, 'volumemute'); self.phone_present = True
+            if not self.phone_present:
+                self.play_chime("detect")
+                self._safe_macro(pyautogui.press, 'volumemute')
+                self.phone_present = True
+                self._session_events.append("phone")
         else:
             if self.phone_present: self._safe_macro(pyautogui.press, 'volumemute'); self.phone_present = False
 
@@ -237,8 +324,52 @@ class HabitEngine:
                         try:
                             import subprocess
                             subprocess.Popen(macro, shell=True)
+                            self.log_event(f"📦 Object macro triggered")
                         except Exception as e:
                             print(f"Object macro failed: {e}")
+
+    def voice_command_listener(self, callback):
+        try:
+            import speech_recognition as sr
+            r = sr.Recognizer()
+            mic = sr.Microphone()
+            while self._voice_enabled:
+                with mic as source:
+                    r.adjust_for_ambient_noise(source)
+                    audio = r.listen(source)
+                try:
+                    text = r.recognize_google(audio).lower()
+                    if "omni" in text:
+                        if "focus mode" in text: callback("Focus")
+                        elif "lazy mode" in text: callback("Lazy")
+                        elif "all on" in text: callback("All")
+                        elif "mute" in text: self._safe_macro(pyautogui.press, 'volumemute')
+                        elif "screenshot" in text: self._safe_macro(pyautogui.hotkey, 'win', 'prtscr')
+                        self.log_event(f"🎙 Voice command: {text}")
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"Voice recognition error: {e}")
+
+    def ambient_light_monitor(self, frame):
+        now = time.time()
+        if now - self._last_light_mode_change < 60: return
+
+        avg_brightness = cv2.mean(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))[0]
+        if avg_brightness < 50:
+            if self._light_mode_time == 0: self._light_mode_time = now
+            elif now - self._light_mode_time > 10:
+                subprocess.Popen("reg add HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize /v AppsUseLightTheme /t REG_DWORD /d 0 /f", shell=True)
+                self.log_event("🌙 Dark mode activated")
+                self._last_light_mode_change = now; self._light_mode_time = 0
+        elif avg_brightness > 150:
+            if self._light_mode_time == 0: self._light_mode_time = now
+            elif now - self._light_mode_time > 10:
+                subprocess.Popen("reg add HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize /v AppsUseLightTheme /t REG_DWORD /d 1 /f", shell=True)
+                self.log_event("☀️ Light mode restored")
+                self._last_light_mode_change = now; self._light_mode_time = 0
+        else:
+            self._light_mode_time = 0
 
     def morning_routine(self, face_results):
         if self.mode == "Off" or self.morning_routine_done: return

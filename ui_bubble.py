@@ -59,8 +59,33 @@ class SettingsDialog(QDialog):
         form.addRow(self.privacy_cb)
         self.gaze_cb = QCheckBox("Enable Gaze Dimmer"); self.gaze_cb.setChecked(self.config['habits']['gaze_dimmer'].get('enabled', True))
         form.addRow(self.gaze_cb)
+
+        self.doubletap_cb = QCheckBox("Enable Double Tap")
+        self.doubletap_cb.setChecked(self.config['habits']['double_tap'].get('enabled', True))
+        form.addRow(self.doubletap_cb)
+
+        self.palm_cb = QCheckBox("Enable Palm Menu")
+        self.palm_cb.setChecked(self.config['habits']['palm_menu'].get('enabled', True))
+        form.addRow(self.palm_cb)
+
+        self.mug_cb = QCheckBox("Enable Coffee Mug Mute")
+        self.mug_cb.setChecked(self.config['habits']['coffee_mug_mute'].get('enabled', True))
+        form.addRow(self.mug_cb)
+
+        self.phone_cb = QCheckBox("Enable Phone Detector")
+        self.phone_cb.setChecked(self.config['habits']['phone_down'].get('enabled', True))
+        form.addRow(self.phone_cb)
+
+        self.morning_cb = QCheckBox("Enable Morning Routine")
+        self.morning_cb.setChecked(self.config['habits']['morning_routine'].get('enabled', True))
+        form.addRow(self.morning_cb)
+
         self.scroll_cb = QCheckBox("Enable Air Scroll"); self.scroll_cb.setChecked(self.config['habits']['air_scroll'].get('enabled', True))
         form.addRow(self.scroll_cb)
+
+        self.voice_cb = QCheckBox("Enable Voice Commands")
+        self.voice_cb.setChecked(self.config.get('system', {}).get('voice_enabled', False))
+        form.addRow(self.voice_cb)
 
         save_btn = QPushButton("Save & Apply")
         save_btn.setStyleSheet("background-color: #2980b9; padding: 10px; border-radius: 5px;")
@@ -90,15 +115,30 @@ class SettingsDialog(QDialog):
         self.config['habits']['gaze_dimmer']['enabled'] = self.gaze_cb.isChecked()
         self.config['habits']['gaze_dimmer']['away_timeout'] = self.gaze_timeout.value()
         self.config['habits']['gaze_dimmer']['dim_level'] = self.dim_level.value()
+
+        self.config['habits']['double_tap']['enabled'] = self.doubletap_cb.isChecked()
+        self.config['habits']['palm_menu']['enabled'] = self.palm_cb.isChecked()
+        self.config['habits']['coffee_mug_mute']['enabled'] = self.mug_cb.isChecked()
+        self.config['habits']['phone_down']['enabled'] = self.phone_cb.isChecked()
+        self.config['habits']['morning_routine']['enabled'] = self.morning_cb.isChecked()
+        self.config.setdefault('system', {})['voice_enabled'] = self.voice_cb.isChecked()
+
         self.accept()
 
 class ActivityLogDialog(QDialog):
-    def __init__(self, log_data, parent=None):
+    def __init__(self, log_data, focus_score=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Activity Log")
         self.setFixedSize(400, 500)
         self.setStyleSheet("background-color: #2c3e50; color: #ecf0f1;")
         layout = QVBoxLayout()
+
+        if focus_score is not None:
+            score_label = QLabel(f"Focus Score: {focus_score}/100")
+            score_label.setAlignment(Qt.AlignCenter)
+            score_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #00adb5; padding: 10px;")
+            layout.addWidget(score_label)
+
         self.list_widget = QListWidget()
         self.list_widget.addItems(log_data[::-1])  # Show latest first
         self.list_widget.setStyleSheet("background-color: #34495e; border: none; padding: 5px;")
@@ -162,6 +202,77 @@ class PomodoroTimer(QWidget):
         else:
             self.seconds -= 1
         self.label.setText(f"{self.minutes:02d}:{self.seconds:02d}")
+
+class DashboardEditorDialog(QDialog):
+    def __init__(self, config, parent=None):
+        super().__init__(parent)
+        self.config = config
+        self.setWindowTitle("Edit Paper Dashboard")
+        self.setFixedSize(500, 400)
+        self.setStyleSheet("background-color: #2c3e50; color: #ecf0f1;")
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout()
+        self.list_widget = QListWidget()
+        for btn in self.config.get('paper_dashboard', {}).get('buttons', []):
+            self.list_widget.addItem(f"{btn['name']} | {btn['rect']} | {btn['macro']}")
+
+        layout.addWidget(QLabel("Current Buttons:"))
+        layout.addWidget(self.list_widget)
+
+        form = QFormLayout()
+        self.name_input = QLineEdit()
+        self.rect_input = QLineEdit()
+        self.rect_input.setPlaceholderText("x1, y1, x2, y2 (floats 0.0-1.0)")
+        self.macro_input = QLineEdit()
+        form.addRow("Name:", self.name_input)
+        form.addRow("Rect:", self.rect_input)
+        form.addRow("Macro/Path:", self.macro_input)
+        layout.addLayout(form)
+
+        btn_layout = QHBoxLayout()
+        add_btn = QPushButton("Add/Update")
+        add_btn.clicked.connect(self.add_button)
+        del_btn = QPushButton("Delete Selected")
+        del_btn.clicked.connect(self.delete_button)
+        save_btn = QPushButton("Save & Close")
+        save_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(add_btn); btn_layout.addWidget(del_btn); btn_layout.addWidget(save_btn)
+        layout.addLayout(btn_layout)
+        self.setLayout(layout)
+
+    def add_button(self):
+        try:
+            name = self.name_input.text()
+            rect = [float(x.strip()) for x in self.rect_input.text().split(',')]
+            macro = self.macro_input.text()
+            if len(rect) != 4: raise ValueError
+
+            # Update if exists
+            buttons = self.config['paper_dashboard'].setdefault('buttons', [])
+            for btn in buttons:
+                if btn['name'] == name:
+                    btn['rect'] = rect; btn['macro'] = macro
+                    break
+            else:
+                buttons.append({"name": name, "rect": rect, "macro": macro})
+
+            self.refresh_list()
+        except:
+            pass
+
+    def delete_button(self):
+        current_item = self.list_widget.currentItem()
+        if current_item:
+            name = current_item.text().split('|')[0].strip()
+            self.config['paper_dashboard']['buttons'] = [b for b in self.config['paper_dashboard']['buttons'] if b['name'] != name]
+            self.refresh_list()
+
+    def refresh_list(self):
+        self.list_widget.clear()
+        for btn in self.config.get('paper_dashboard', {}).get('buttons', []):
+            self.list_widget.addItem(f"{btn['name']} | {btn['rect']} | {btn['macro']}")
 
 class OnboardingWizard(QDialog):
     def __init__(self, parent=None):
@@ -227,6 +338,7 @@ class OmniBubble(QWidget):
     update_status_signal = pyqtSignal(str)
     update_preview_signal = pyqtSignal(object)
     show_stats_requested = pyqtSignal()
+    edit_dashboard_requested = pyqtSignal()
     pomodoro_finished = pyqtSignal()
     camera_retry_requested = pyqtSignal()
     request_input_signal = pyqtSignal(str, str)
@@ -287,6 +399,7 @@ class OmniBubble(QWidget):
         pom_act = menu.addAction("⏲ Start Pomodoro (25m)")
         menu.addSeparator()
         log_act = menu.addAction("📋 Activity Log"); stats_act = menu.addAction("📊 View Stats Report")
+        dash_act = menu.addAction("📋 Edit Dashboard")
         sett_act = menu.addAction("⚙️ Settings"); wiz_act = menu.addAction("🧙 Onboarding Wizard")
         menu.addSeparator()
         p_act = menu.addAction("👁 Toggle Preview")
@@ -300,6 +413,7 @@ class OmniBubble(QWidget):
         elif action == lr_o_act: self.learn_object.emit()
         elif action == log_act: self.show_log_requested.emit()
         elif action == stats_act: self.show_stats_requested.emit()
+        elif action == dash_act: self.edit_dashboard_requested.emit()
         elif action == pom_act: self.pomodoro.start(25)
         elif action == sett_act: self.open_settings()
         elif action == wiz_act: self.open_wizard()
@@ -317,13 +431,18 @@ class OmniBubble(QWidget):
         wiz = OnboardingWizard(self)
         wiz.exec_()
 
+    def open_dashboard_editor(self):
+        dlg = DashboardEditorDialog(self.config, self)
+        if dlg.exec_():
+            self.config_updated.emit(self.config)
+
     def show_camera_error(self):
         dlg = CameraErrorDialog(self)
         if dlg.exec_():
             self.camera_retry_requested.emit()
 
-    def show_log(self, log_data):
-        dlg = ActivityLogDialog(log_data, self)
+    def show_log(self, log_data, focus_score=None):
+        dlg = ActivityLogDialog(log_data, focus_score, self)
         dlg.exec_()
 
     def get_macro_input(self, title="Action", label="Command:"):

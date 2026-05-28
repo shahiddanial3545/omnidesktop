@@ -23,11 +23,16 @@ class StatsTracker:
     def log_stat(self, category, value=1):
         today = str(date.today())
         if today not in self.data:
-            self.data[today] = {"focus_minutes": 0, "posture_alerts": 0, "dashboard_taps": 0, "gestures_used": 0}
+            self.data[today] = {"focus_minutes": 0, "posture_alerts": 0, "dashboard_taps": 0, "gestures_used": 0, "focus_score": 100}
 
-        if category in self.data[today]:
+        if category == "focus_score":
+            # Average score for the day
+            old_score = self.data[today].get("focus_score", 100)
+            self.data[today]["focus_score"] = (old_score + value) // 2
+        elif category in self.data[today]:
             self.data[today][category] += value
-            self._save_data()
+
+        self._save_data()
 
     def get_today_stats(self):
         today = str(date.today())
