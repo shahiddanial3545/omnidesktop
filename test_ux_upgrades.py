@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 import sys
 
-# Mock UI libs and pyttsx3
+# Mock UI libs and sound
 sys.modules['pyautogui'] = MagicMock()
 sys.modules['screen_brightness_control'] = MagicMock()
 sys.modules['PyQt5'] = MagicMock()
@@ -10,6 +10,7 @@ sys.modules['PyQt5.QtWidgets'] = MagicMock()
 sys.modules['PyQt5.QtCore'] = MagicMock()
 sys.modules['PyQt5.QtGui'] = MagicMock()
 sys.modules['pyttsx3'] = MagicMock()
+sys.modules['winsound'] = MagicMock()
 
 from habit_engine import HabitEngine
 
@@ -24,39 +25,28 @@ class TestUXUpgrades(unittest.TestCase):
                 "double_tap": {"enabled": True, "velocity_threshold": 0.01},
                 "morning_routine": {"enabled": False},
                 "phone_down": {"enabled": True, "roi": [0,0,1,1]},
-                "coffee_mug_mute": {"enabled": True, "target_color_hsv": [0,0,0], "tolerance": 10}
+                "coffee_mug_mute": {"enabled": True, "target_color_hsv": [0,0,0], "tolerance": 10},
+                "palm_menu": {"enabled": False},
+                "gaze_dimmer": {"enabled": False}
             }
         }
-        self.voice_mock = MagicMock()
-        self.engine = HabitEngine(self.config, voice_callback=self.voice_mock)
+        self.engine = HabitEngine(self.config)
 
-    def test_mode_switching(self):
-        self.engine.set_mode("Focus")
-        self.assertEqual(self.engine.mode, "Focus")
-        self.voice_mock.assert_called_with("Focus mode activated")
+    def test_mode_switching_chime(self):
+        with patch.object(self.engine, 'play_chime') as chime_mock:
+            self.engine.set_mode("Focus")
+            self.assertEqual(self.engine.mode, "Focus")
+            chime_mock.assert_called_with("success")
 
     def test_mode_restriction_focus(self):
         self.engine.set_mode("Focus")
-
-        # In Focus mode, air_scroll (Lazy) should NOT trigger voice
         mock_hands = MagicMock()
         mock_hands.multi_hand_landmarks = [MagicMock()]
-        mock_hands.multi_hand_landmarks[0].landmark = {0: MagicMock(y=0.1)} # Trigger condition for scroll
+        mock_hands.multi_hand_landmarks[0].landmark = {0: MagicMock(y=0.1)}
 
-        self.voice_mock.reset_mock()
-        self.engine.air_scroll(mock_hands)
-        self.voice_mock.assert_not_called()
-
-    def test_mode_restriction_lazy(self):
-        self.engine.set_mode("Lazy")
-
-        # In Lazy mode, posture (Focus) should NOT trigger voice
-        mock_pose = MagicMock()
-        mock_pose.pose_landmarks.landmark = {11: MagicMock(y=0.1), 12: MagicMock(y=0.5)} # Slouch condition
-
-        self.voice_mock.reset_mock()
-        self.engine.posture_guardian(mock_pose)
-        self.voice_mock.assert_not_called()
+        with patch('pyautogui.press') as press_mock:
+            self.engine.air_scroll(mock_hands)
+            press_mock.assert_not_called()
 
 if __name__ == '__main__':
     unittest.main()

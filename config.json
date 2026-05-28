@@ -7,7 +7,8 @@
         ],
         "auto_detect": true
     },
-    "ghost_actions": [],
+    "custom_gestures": [],
+    "custom_objects": [],
     "habits": {
         "phone_down": {
             "enabled": true,
@@ -44,6 +45,15 @@
         "double_tap": {
             "enabled": true,
             "velocity_threshold": 0.02
+        },
+        "palm_menu": {
+            "enabled": true,
+            "pinch_threshold": 0.05
+        },
+        "gaze_dimmer": {
+            "enabled": true,
+            "away_timeout": 5,
+            "dim_level": 10
         }
     },
     "system": {
@@ -51,6 +61,7 @@
         "frame_width": 640,
         "frame_height": 480,
         "fps": 30,
-        "ema_alpha": 0.3
+        "ema_alpha": 0.3,
+        "gesture_tolerance": 0.85
     }
 }

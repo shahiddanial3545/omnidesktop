@@ -32,7 +32,7 @@ def load_mp_solution(name):
         pass
     raise ImportError(f"Could not load MediaPipe solution: {name}.")
 
-# Robust Dummy Classes to prevent NoneType attribute errors
+# Robust Dummy Classes
 class MediaPipeResults:
     def __init__(self):
         self.multi_hand_landmarks = None
@@ -44,20 +44,19 @@ class MediaPipeDummy:
     def __init__(self, *args, **kwargs): pass
     def __call__(self, *args, **kwargs): return self
     def __getattr__(self, name):
-        if name == "Hands" or name == "Pose" or name == "FaceDetection" or name == "FaceMesh":
+        if name in ["Hands", "Pose", "FaceDetection", "FaceMesh"]:
             return MediaPipeDummy
         return self
     def process(self, *args, **kwargs):
         return MediaPipeResults()
 
-# Pre-initialize solution handles
 try:
     mp_hands = load_mp_solution('hands')
     mp_pose = load_mp_solution('pose')
     mp_face_detection = load_mp_solution('face_detection')
     mp_face_mesh = load_mp_solution('face_mesh')
-except Exception:
-    print("WARNING: MediaPipe could not be loaded. Running in dummy mode.")
+except Exception as e:
+    print(f"WARNING: MediaPipe could not be loaded ({e}). Running in dummy mode.")
     mp_hands = mp_pose = mp_face_detection = mp_face_mesh = MediaPipeDummy()
 
 class EMAFilter:
@@ -98,10 +97,8 @@ class VisionCore:
             try:
                 if hasattr(mp_hands, 'Hands'):
                     self._hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.5, min_tracking_confidence=0.5)
-                else:
-                    self._hands = MediaPipeDummy()
-            except:
-                self._hands = MediaPipeDummy()
+                else: self._hands = MediaPipeDummy()
+            except: self._hands = MediaPipeDummy()
         return self._hands
 
     @property
@@ -110,10 +107,8 @@ class VisionCore:
             try:
                 if hasattr(mp_pose, 'Pose'):
                     self._pose = mp_pose.Pose(static_image_mode=False, model_complexity=0, min_detection_confidence=0.5, min_tracking_confidence=0.5)
-                else:
-                    self._pose = MediaPipeDummy()
-            except:
-                self._pose = MediaPipeDummy()
+                else: self._pose = MediaPipeDummy()
+            except: self._pose = MediaPipeDummy()
         return self._pose
 
     @property
@@ -122,10 +117,8 @@ class VisionCore:
             try:
                 if hasattr(mp_face_detection, 'FaceDetection'):
                     self._face_detection = mp_face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5)
-                else:
-                    self._face_detection = MediaPipeDummy()
-            except:
-                self._face_detection = MediaPipeDummy()
+                else: self._face_detection = MediaPipeDummy()
+            except: self._face_detection = MediaPipeDummy()
         return self._face_detection
 
     @property
@@ -133,11 +126,10 @@ class VisionCore:
         if self._face_mesh is None:
             try:
                 if hasattr(mp_face_mesh, 'FaceMesh'):
-                    self._face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_landmarks=False, min_detection_confidence=0.5, min_tracking_confidence=0.5)
-                else:
-                    self._face_mesh = MediaPipeDummy()
-            except:
-                self._face_mesh = MediaPipeDummy()
+                    # Enable refine_landmarks for gaze tracking (Pillar 4)
+                    self._face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_landmarks=True, min_detection_confidence=0.5, min_tracking_confidence=0.5)
+                else: self._face_mesh = MediaPipeDummy()
+            except: self._face_mesh = MediaPipeDummy()
         return self._face_mesh
 
     def get_frame(self):
@@ -151,45 +143,31 @@ class VisionCore:
         if feature_type == 'hands' and hasattr(results, 'multi_hand_landmarks') and results.multi_hand_landmarks:
             for hand_id, hand_landmarks in enumerate(results.multi_hand_landmarks):
                 for idx, lm in enumerate(hand_landmarks.landmark):
-                    key = f"hand_{hand_id}_{idx}"
-                    lm.x = self._get_filter(key + "_x").apply(lm.x)
-                    lm.y = self._get_filter(key + "_y").apply(lm.y)
-                    lm.z = self._get_filter(key + "_z").apply(lm.z)
+                    key = f"hand_{hand_id}_{idx}"; lm.x = self._get_filter(key+"_x").apply(lm.x); lm.y = self._get_filter(key+"_y").apply(lm.y); lm.z = self._get_filter(key+"_z").apply(lm.z)
         elif feature_type == 'pose' and hasattr(results, 'pose_landmarks') and results.pose_landmarks:
             for idx, lm in enumerate(results.pose_landmarks.landmark):
-                key = f"pose_{idx}"
-                lm.x = self._get_filter(key + "_x").apply(lm.x)
-                lm.y = self._get_filter(key + "_y").apply(lm.y)
-                lm.z = self._get_filter(key + "_z").apply(lm.z)
+                key = f"pose_{idx}"; lm.x = self._get_filter(key+"_x").apply(lm.x); lm.y = self._get_filter(key+"_y").apply(lm.y); lm.z = self._get_filter(key+"_z").apply(lm.z)
         elif feature_type == 'face_mesh' and hasattr(results, 'multi_face_landmarks') and results.multi_face_landmarks:
             for face_id, face_landmarks in enumerate(results.multi_face_landmarks):
                 for idx, lm in enumerate(face_landmarks.landmark):
-                    key = f"face_{face_id}_{idx}"
-                    lm.x = self._get_filter(key + "_x").apply(lm.x)
-                    lm.y = self._get_filter(key + "_y").apply(lm.y)
-                    lm.z = self._get_filter(key + "_z").apply(lm.z)
+                    key = f"face_{face_id}_{idx}"; lm.x = self._get_filter(key+"_x").apply(lm.x); lm.y = self._get_filter(key+"_y").apply(lm.y); lm.z = self._get_filter(key+"_z").apply(lm.z)
 
     def process(self, frame, features=None):
         if features is None: features = ['hands', 'pose', 'face_detection', 'face_mesh']
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = {}
-
         if 'hands' in features:
-            h = self.hands
-            res = h.process(rgb_frame) if h is not None else MediaPipeResults()
+            res = self.hands.process(rgb_frame)
             self.smooth_landmarks(res, 'hands')
             results['hands'] = res
         if 'pose' in features:
-            p = self.pose
-            res = p.process(rgb_frame) if p is not None else MediaPipeResults()
+            res = self.pose.process(rgb_frame)
             self.smooth_landmarks(res, 'pose')
             results['pose'] = res
         if 'face_detection' in features:
-            fd = self.face_detection
-            results['face_detection'] = fd.process(rgb_frame) if fd is not None else MediaPipeResults()
+            results['face_detection'] = self.face_detection.process(rgb_frame)
         if 'face_mesh' in features:
-            fm = self.face_mesh
-            res = fm.process(rgb_frame) if fm is not None else MediaPipeResults()
+            res = self.face_mesh.process(rgb_frame)
             self.smooth_landmarks(res, 'face_mesh')
             results['face_mesh'] = res
         return results
