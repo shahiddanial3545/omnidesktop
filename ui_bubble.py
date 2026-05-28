@@ -35,9 +35,9 @@ class OmniBubble(QWidget):
 
     def __init__(self):
         super().__init__()
+        self.preview = PreviewWindow() # Initialize preview BEFORE initUI
         self.initUI()
         self.oldPos = self.pos()
-        self.preview = PreviewWindow()
 
     def initUI(self):
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
