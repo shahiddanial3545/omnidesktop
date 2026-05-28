@@ -12,6 +12,13 @@ class SettingsDialog(QDialog):
     def __init__(self, config, parent=None):
         super().__init__(parent)
         self.config = config
+        # Deep guarantee of required sections
+        if 'system' not in self.config: self.config['system'] = {}
+        if 'habits' not in self.config: self.config['habits'] = {}
+        for h in ['posture_guardian', 'privacy_shield', 'shush_trigger', 'air_scroll', 'gaze_dimmer',
+                  'double_tap', 'palm_menu', 'coffee_mug_mute', 'phone_down', 'morning_routine']:
+            if h not in self.config['habits']: self.config['habits'][h] = {}
+
         self.setWindowTitle("Omni-Desk Settings")
         self.setMinimumWidth(400)
         self.setStyleSheet("background-color: #2c3e50; color: #ecf0f1;")
@@ -24,67 +31,70 @@ class SettingsDialog(QDialog):
         container = QWidget()
         form = QFormLayout(container)
 
-        self.fps_slider = self._create_slider(5, 60, self.config['system'].get('fps', 30))
+        sys_cfg = self.config.get('system', {})
+        hab_cfg = self.config.get('habits', {})
+
+        self.fps_slider = self._create_slider(5, 60, sys_cfg.get('fps', 30))
         form.addRow("Target FPS:", self.fps_slider)
 
-        self.skip_slider = self._create_slider(0, 10, self.config['system'].get('frame_skip', 0))
+        self.skip_slider = self._create_slider(0, 10, sys_cfg.get('frame_skip', 0))
         form.addRow("Global Frame Skip:", self.skip_slider)
 
         # Habit Thresholds
         form.addRow(QLabel("<b>Habit Thresholds</b>"))
 
-        self.posture_timeout = self._create_slider(10, 1200, self.config['habits']['posture_guardian'].get('slouch_timeout', 600))
+        self.posture_timeout = self._create_slider(10, 1200, hab_cfg.get('posture_guardian', {}).get('slouch_timeout', 600))
         form.addRow("Posture Timeout (s):", self.posture_timeout)
 
-        self.privacy_sens = self._create_slider(1, 100, int(self.config['habits']['privacy_shield'].get('sensitivity', 0.5) * 100))
+        self.privacy_sens = self._create_slider(1, 100, int(hab_cfg.get('privacy_shield', {}).get('sensitivity', 0.5) * 100))
         form.addRow("Privacy Sensitivity:", self.privacy_sens)
 
-        self.shush_dist = self._create_slider(1, 200, int(self.config['habits']['shush_trigger'].get('dist_threshold', 0.05) * 1000))
+        self.shush_dist = self._create_slider(1, 200, int(hab_cfg.get('shush_trigger', {}).get('dist_threshold', 0.05) * 1000))
         form.addRow("Shush Distance:", self.shush_dist)
 
-        self.scroll_sens = self._create_slider(1, 100, int(self.config['habits']['air_scroll'].get('sensitivity', 0.1) * 100))
+        self.scroll_sens = self._create_slider(1, 100, int(hab_cfg.get('air_scroll', {}).get('sensitivity', 0.1) * 100))
         form.addRow("Scroll Sensitivity:", self.scroll_sens)
 
-        self.gaze_timeout = self._create_slider(1, 30, self.config['habits']['gaze_dimmer'].get('away_timeout', 5))
+        self.gaze_timeout = self._create_slider(1, 30, hab_cfg.get('gaze_dimmer', {}).get('away_timeout', 5))
         form.addRow("Gaze Dim Timeout (s):", self.gaze_timeout)
 
-        self.dim_level = self._create_slider(0, 100, self.config['habits']['gaze_dimmer'].get('dim_level', 10))
+        self.dim_level = self._create_slider(0, 100, hab_cfg.get('gaze_dimmer', {}).get('dim_level', 10))
         form.addRow("Dim Level (%):", self.dim_level)
 
         # Toggles
         form.addRow(QLabel("<b>Toggle Features</b>"))
-        self.posture_cb = QCheckBox("Enable Posture Guardian"); self.posture_cb.setChecked(self.config['habits']['posture_guardian'].get('enabled', True))
+        self.posture_cb = QCheckBox("Enable Posture Guardian"); self.posture_cb.setChecked(hab_cfg.get('posture_guardian', {}).get('enabled', True))
         form.addRow(self.posture_cb)
-        self.privacy_cb = QCheckBox("Enable Privacy Shield"); self.privacy_cb.setChecked(self.config['habits']['privacy_shield'].get('enabled', True))
+        self.privacy_cb = QCheckBox("Enable Privacy Shield"); self.privacy_cb.setChecked(hab_cfg.get('privacy_shield', {}).get('enabled', True))
         form.addRow(self.privacy_cb)
-        self.gaze_cb = QCheckBox("Enable Gaze Dimmer"); self.gaze_cb.setChecked(self.config['habits']['gaze_dimmer'].get('enabled', True))
+        self.gaze_cb = QCheckBox("Enable Gaze Dimmer"); self.gaze_cb.setChecked(hab_cfg.get('gaze_dimmer', {}).get('enabled', True))
         form.addRow(self.gaze_cb)
 
         self.doubletap_cb = QCheckBox("Enable Double Tap")
-        self.doubletap_cb.setChecked(self.config['habits']['double_tap'].get('enabled', True))
+        self.doubletap_cb.setChecked(hab_cfg.get('double_tap', {}).get('enabled', True))
         form.addRow(self.doubletap_cb)
 
         self.palm_cb = QCheckBox("Enable Palm Menu")
-        self.palm_cb.setChecked(self.config['habits']['palm_menu'].get('enabled', True))
+        self.palm_cb.setChecked(hab_cfg.get('palm_menu', {}).get('enabled', True))
         form.addRow(self.palm_cb)
 
         self.mug_cb = QCheckBox("Enable Coffee Mug Mute")
-        self.mug_cb.setChecked(self.config['habits']['coffee_mug_mute'].get('enabled', True))
+        self.mug_cb.setChecked(hab_cfg.get('coffee_mug_mute', {}).get('enabled', True))
         form.addRow(self.mug_cb)
 
         self.phone_cb = QCheckBox("Enable Phone Detector")
-        self.phone_cb.setChecked(self.config['habits']['phone_down'].get('enabled', True))
+        self.phone_cb.setChecked(hab_cfg.get('phone_down', {}).get('enabled', True))
         form.addRow(self.phone_cb)
 
         self.morning_cb = QCheckBox("Enable Morning Routine")
-        self.morning_cb.setChecked(self.config['habits']['morning_routine'].get('enabled', True))
+        self.morning_cb.setChecked(hab_cfg.get('morning_routine', {}).get('enabled', True))
         form.addRow(self.morning_cb)
 
-        self.scroll_cb = QCheckBox("Enable Air Scroll"); self.scroll_cb.setChecked(self.config['habits']['air_scroll'].get('enabled', True))
+        self.scroll_cb = QCheckBox("Enable Air Scroll"); self.scroll_cb.setChecked(hab_cfg.get('air_scroll', {}).get('enabled', True))
         form.addRow(self.scroll_cb)
 
         self.voice_cb = QCheckBox("Enable Voice Commands")
-        self.voice_cb.setChecked(self.config.get('system', {}).get('voice_enabled', False))
+        self.voice_cb.setChecked(sys_cfg.get('voice_enabled', False))
         form.addRow(self.voice_cb)
 
         save_btn = QPushButton("Save & Apply")
@@ -342,11 +352,12 @@ class OmniBubble(QWidget):
     edit_dashboard_requested = pyqtSignal()
     pomodoro_finished = pyqtSignal()
     camera_retry_requested = pyqtSignal()
+    request_camera_error_signal = pyqtSignal()
     request_input_signal = pyqtSignal(str, str)
 
     def __init__(self, config=None):
         super().__init__()
-        self.config = config or {}
+        self.config = config if isinstance(config, dict) else {}
         self.preview = PreviewWindow() # Initialize preview BEFORE initUI
         self.pomodoro = PomodoroTimer()
         self.initUI()
@@ -359,6 +370,7 @@ class OmniBubble(QWidget):
     def initUI(self):
         self.pomodoro.finished.connect(self._handle_pomodoro_finished)
         self.show_message_signal.connect(self.show_message_box)
+        self.request_camera_error_signal.connect(self.show_camera_error)
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.layout = QVBoxLayout()

@@ -65,12 +65,19 @@ class OmniDeskApp:
         }
 
     def _validate_config(self):
+        # Ensure self.config is a dict
+        if not isinstance(self.config, dict):
+            self.config = self._get_default_config()
+            return
+
         defaults = self._get_default_config()
-        for key in defaults:
-            if key not in self.config: self.config[key] = defaults[key]
-            if isinstance(defaults[key], dict):
-                for subkey in defaults[key]:
-                    if subkey not in self.config[key]: self.config[key][subkey] = defaults[key][subkey]
+        for key, val in defaults.items():
+            if key not in self.config or not isinstance(self.config[key], type(val)):
+                self.config[key] = val
+            elif isinstance(val, dict):
+                for subkey, subval in val.items():
+                    if subkey not in self.config[key] or not isinstance(self.config[key][subkey], type(subval)):
+                        self.config[key][subkey] = subval
 
     def save_config(self):
         with open(self.config_path, 'w') as f: json.dump(self.config, f, indent=4)
@@ -173,7 +180,7 @@ class OmniDeskApp:
             self.ui.update_status_signal.emit("Camera Reconnected")
             self.habit_engine.speak("Camera reconnected")
         else:
-            self.ui.show_camera_error()
+            self.ui.request_camera_error_signal.emit()
 
     def start_gesture_recording(self):
         self.trigger_gesture_recording()
@@ -214,7 +221,7 @@ class OmniDeskApp:
             frame = self.vision.get_frame()
             if frame is None:
                 if not camera_error_shown:
-                    self.ui.show_camera_error()
+                    self.ui.request_camera_error_signal.emit()
                     camera_error_shown = True
                 time.sleep(1.0); continue
             camera_error_shown = False
