@@ -51,3 +51,20 @@ The app speaks to you! You will hear:
 
 ## 🖥 Hardware Target
 Optimized for **Intel Core i5 (7th Gen)** with < 150MB RAM usage.
+
+## 🩺 Troubleshooting
+If you see "WARNING: MediaPipe could not be loaded", your Python environment has a version conflict (usually NumPy 2.x).
+
+### 1. Run Diagnostics
+```bash
+python diagnose.py
+```
+
+### 2. Fix Environment Automatically
+Run this command to force-install the stable versions:
+```bash
+pip install --force-reinstall numpy==1.26.4 mediapipe==0.10.13 pyttsx3
+```
+
+### 3. Audio/Voice Issues
+If the app doesn't speak, ensure you have a TTS engine installed on your OS (Standard on Windows 10/11).

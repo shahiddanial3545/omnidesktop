@@ -32,7 +32,7 @@ def load_mp_solution(name):
         pass
     raise ImportError(f"Could not load MediaPipe solution: {name}.")
 
-# Robust Dummy Class to prevent NoneType attribute errors
+# Robust Dummy Classes to prevent NoneType attribute errors
 class MediaPipeResults:
     def __init__(self):
         self.multi_hand_landmarks = None
@@ -43,16 +43,20 @@ class MediaPipeResults:
 class MediaPipeDummy:
     def __init__(self, *args, **kwargs): pass
     def __call__(self, *args, **kwargs): return self
-    def __getattr__(self, name): return self
+    def __getattr__(self, name):
+        if name == "Hands" or name == "Pose" or name == "FaceDetection" or name == "FaceMesh":
+            return MediaPipeDummy
+        return self
     def process(self, *args, **kwargs):
         return MediaPipeResults()
 
+# Pre-initialize solution handles
 try:
     mp_hands = load_mp_solution('hands')
     mp_pose = load_mp_solution('pose')
     mp_face_detection = load_mp_solution('face_detection')
     mp_face_mesh = load_mp_solution('face_mesh')
-except ImportError:
+except Exception:
     print("WARNING: MediaPipe could not be loaded. Running in dummy mode.")
     mp_hands = mp_pose = mp_face_detection = mp_face_mesh = MediaPipeDummy()
 
@@ -92,7 +96,6 @@ class VisionCore:
     def hands(self):
         if self._hands is None:
             try:
-                # Check if it's the Dummy class before calling Hands
                 if hasattr(mp_hands, 'Hands'):
                     self._hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.5, min_tracking_confidence=0.5)
                 else:
@@ -138,6 +141,7 @@ class VisionCore:
         return self._face_mesh
 
     def get_frame(self):
+        if not self.cap.isOpened(): return None
         ret, frame = self.cap.read()
         if not ret: return None
         return cv2.flip(frame, 1)
@@ -170,19 +174,22 @@ class VisionCore:
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = {}
 
-        # Always return something for requested features
         if 'hands' in features:
-            res = self.hands.process(rgb_frame)
+            h = self.hands
+            res = h.process(rgb_frame) if h is not None else MediaPipeResults()
             self.smooth_landmarks(res, 'hands')
             results['hands'] = res
         if 'pose' in features:
-            res = self.pose.process(rgb_frame)
+            p = self.pose
+            res = p.process(rgb_frame) if p is not None else MediaPipeResults()
             self.smooth_landmarks(res, 'pose')
             results['pose'] = res
         if 'face_detection' in features:
-            results['face_detection'] = self.face_detection.process(rgb_frame)
+            fd = self.face_detection
+            results['face_detection'] = fd.process(rgb_frame) if fd is not None else MediaPipeResults()
         if 'face_mesh' in features:
-            res = self.face_mesh.process(rgb_frame)
+            fm = self.face_mesh
+            res = fm.process(rgb_frame) if fm is not None else MediaPipeResults()
             self.smooth_landmarks(res, 'face_mesh')
             results['face_mesh'] = res
         return results
