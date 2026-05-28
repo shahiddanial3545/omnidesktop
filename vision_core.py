@@ -132,11 +132,21 @@ class VisionCore:
             except: self._face_mesh = MediaPipeDummy()
         return self._face_mesh
 
+    def is_ready(self):
+        return self.cap.isOpened()
+
     def get_frame(self):
         if not self.cap.isOpened(): return None
         ret, frame = self.cap.read()
         if not ret: return None
         return cv2.flip(frame, 1)
+
+    def restart_camera(self, camera_id=0):
+        self.cap.release()
+        self.cap = cv2.VideoCapture(camera_id)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+        return self.cap.isOpened()
 
     def smooth_landmarks(self, results, feature_type):
         if results is None: return

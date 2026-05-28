@@ -23,6 +23,8 @@ except ImportError:
 class HabitEngine:
     def __init__(self, config):
         self.config = config
+        self.stats = None
+        self.activity_log = []
         self.last_slouch_time = time.time()
         self.is_slouching = False
         self.morning_routine_done = False
@@ -50,8 +52,15 @@ class HabitEngine:
             except Exception:
                 self._tts_engine = None
 
+    def log_event(self, event):
+        timestamp = time.strftime("%H:%M:%S")
+        self.activity_log.append(f"[{timestamp}] {event}")
+        if len(self.activity_log) > 50:
+            self.activity_log.pop(0)
+
     def set_mode(self, mode):
         self.mode = mode
+        self.log_event(f"Mode changed to: {mode}")
         self.play_chime("success")
 
     def speak(self, text):
@@ -85,10 +94,12 @@ class HabitEngine:
             if self.is_dimmed:
                 self._safe_macro(sbc.set_brightness, 100)
                 self.is_dimmed = False
+                self.log_event("Screen brightness restored (Gaze detected)")
         else:
             if not self.is_dimmed and time.time() - self.last_eye_contact > self.config.get('habits', {}).get('gaze_dimmer', {}).get('away_timeout', 5):
                 self._safe_macro(sbc.set_brightness, self.config.get('habits', {}).get('gaze_dimmer', {}).get('dim_level', 10))
                 self.is_dimmed = True
+                self.log_event("Screen dimmed (No gaze detected)")
 
     def palm_menu(self, hand_results):
         if self.mode == "Off" or not self.config.get('habits', {}).get('palm_menu', {}).get('enabled', True): return
@@ -120,12 +131,15 @@ class HabitEngine:
                 if not self.is_slouching:
                     self.last_slouch_time = time.time(); self.is_slouching = True
                     self.speak("Please fix your posture")
+                    self.log_event("Slouching detected")
+                    if self.stats: self.stats.log_stat("posture_alerts", 1)
                 if time.time() - self.last_slouch_time > self.config.get('habits', {}).get('posture_guardian', {}).get('slouch_timeout', 600):
                     self._safe_macro(sbc.set_brightness, 20)
             else:
                 if self.is_slouching:
                     self._safe_macro(sbc.set_brightness, 100)
                     self.is_slouching = False
+                    self.log_event("Posture corrected")
 
     def privacy_shield(self, face_results):
         if self.mode != "Focus" and self.mode != "All": return
