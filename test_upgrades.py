@@ -23,7 +23,7 @@ class TestUpgrades(unittest.TestCase):
 
     def test_skeletal_topology_matching(self):
         topology = SkeletalTopology()
-
+        
         # Identity match
         sig = [0.1] * 60 # Dummy signature
         score = topology.match(sig, sig)
@@ -32,13 +32,13 @@ class TestUpgrades(unittest.TestCase):
     def test_palm_menu_logic(self):
         config = {"habits": {"palm_menu": {"enabled": True, "pinch_threshold": 0.1}}}
         engine = HabitEngine(config)
-
+        
         mock_hands = MagicMock()
         mock_hands.multi_hand_landmarks = [MagicMock()]
         # Thumb (4) and Index (8) very close
         p4 = MagicMock(x=0.5, y=0.5); p8 = MagicMock(x=0.51, y=0.51)
         mock_hands.multi_hand_landmarks[0].landmark = {4: p4, 8: p8, 12: p4, 16: p4}
-
+        
         # Trigger first detection
         engine.palm_menu(mock_hands)
         self.assertGreater(engine.pinch_start_times["index"], 0)

@@ -4,7 +4,7 @@ import os
 def run_diagnostics():
     print("--- Omni-Desk Diagnostics ---")
     print(f"Python Version: {sys.version}")
-
+    
     try:
         import numpy
         print(f"NumPy Version: {numpy.__version__}")

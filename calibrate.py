@@ -21,23 +21,23 @@ def calibrate():
     cv2.setMouseCallback("Calibrate Paper Dashboard", click_event)
 
     print("Click the 4 corners of your A4 paper in order: Top-Left, Top-Right, Bottom-Right, Bottom-Left.")
-
+    
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-
+        
         # Draw current corners
         for pt in corners:
             cv2.circle(frame, tuple(pt), 5, (0, 255, 0), -1)
-
+        
         if len(corners) == 4:
             cv2.polylines(frame, [np.array(corners)], True, (0, 255, 0), 2)
-            cv2.putText(frame, "Press 's' to save or 'r' to reset", (10, 30),
+            cv2.putText(frame, "Press 's' to save or 'r' to reset", (10, 30), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
         cv2.imshow("Calibrate Paper Dashboard", frame)
-
+        
         key = cv2.waitKey(1) & 0xFF
         if key == ord('s') and len(corners) == 4:
             config['paper_dashboard']['corners'] = corners
