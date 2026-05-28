@@ -3,10 +3,15 @@ import json
 import threading
 import time
 import cv2
+
+# Global flag for pyttsx3 availability
+PYTTSX3_AVAILABLE = False
 try:
     import pyttsx3
+    PYTTSX3_AVAILABLE = True
 except ImportError:
-    pyttsx3 = None
+    pass
+
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QTimer
 from vision_core import VisionCore
@@ -17,11 +22,12 @@ from ui_bubble import OmniBubble
 class VoiceManager:
     def __init__(self):
         self.engine = None
-        if pyttsx3:
+        if PYTTSX3_AVAILABLE:
             try:
                 self.engine = pyttsx3.init()
-            except:
-                print("Voice engine initialization failed. Continuing without voice.")
+            except Exception as e:
+                print(f"Voice engine init failed: {e}")
+                self.engine = None
 
     def speak(self, text):
         if self.engine:
@@ -35,21 +41,38 @@ class VoiceManager:
 
 class OmniDeskApp:
     def __init__(self, config_path='config.json'):
-        with open(config_path, 'r') as f:
-            self.config = json.load(f)
+        try:
+            with open(config_path, 'r') as f:
+                self.config = json.load(f)
+        except:
+            # Fallback default config if file is missing/broken
+            self.config = {
+                "system": {"camera_id": 0, "frame_width": 640, "frame_height": 480, "fps": 30, "ema_alpha": 0.3},
+                "paper_dashboard": {"corners": None, "buttons": [], "auto_detect": True},
+                "habits": {
+                    "posture_guardian": {"enabled": True, "slouch_timeout": 600},
+                    "privacy_shield": {"enabled": True},
+                    "shush_trigger": {"enabled": True, "dist_threshold": 0.05},
+                    "air_scroll": {"enabled": True},
+                    "double_tap": {"enabled": True, "velocity_threshold": 0.02},
+                    "morning_routine": {"enabled": False},
+                    "phone_down": {"enabled": False},
+                    "coffee_mug_mute": {"enabled": False}
+                }
+            }
 
         self.voice = VoiceManager()
         self.vision = VisionCore(
-            camera_id=self.config['system']['camera_id'],
-            width=self.config['system']['frame_width'],
-            height=self.config['system']['frame_height'],
+            camera_id=self.config['system'].get('camera_id', 0),
+            width=self.config['system'].get('frame_width', 640),
+            height=self.config['system'].get('frame_height', 480),
             alpha=self.config['system'].get('ema_alpha', 0.3)
         )
 
         self.habit_engine = HabitEngine(self.config, voice_callback=self.voice.speak)
         self.dashboard = PaperDashboard(
-            corners=self.config['paper_dashboard']['corners'],
-            buttons=self.config['paper_dashboard']['buttons']
+            corners=self.config['paper_dashboard'].get('corners'),
+            buttons=self.config['paper_dashboard'].get('buttons', [])
         )
         self.auto_paper = AutoPaperDetector()
         self.ghost_actions = GhostActions()
@@ -78,7 +101,9 @@ class OmniDeskApp:
                 continue
 
             frame = self.vision.get_frame()
-            if frame is None: continue
+            if frame is None:
+                time.sleep(0.1)
+                continue
 
             # 1. Auto Paper Detection
             if self.config['paper_dashboard'].get('auto_detect', True):
@@ -91,7 +116,7 @@ class OmniDeskApp:
 
             results = self.vision.process(frame)
 
-            # 2. Habit Triggers
+            # 2. Habit Triggers (Check keys to prevent KeyError if results are dummy)
             self.habit_engine.posture_guardian(results.get('pose'))
             self.habit_engine.privacy_shield(results.get('face_detection'))
             self.habit_engine.shush_trigger(results.get('hands'), results.get('face_mesh'))
@@ -102,8 +127,9 @@ class OmniDeskApp:
             self.habit_engine.coffee_mug_mute(frame)
 
             # 3. Spatial Macros
-            if results.get('hands') and hasattr(results['hands'], 'multi_hand_landmarks') and results['hands'].multi_hand_landmarks:
-                idx_finger = results['hands'].multi_hand_landmarks[0].landmark[8]
+            hands = results.get('hands')
+            if hands and hasattr(hands, 'multi_hand_landmarks') and hands.multi_hand_landmarks:
+                idx_finger = hands.multi_hand_landmarks[0].landmark[8]
                 tip_coords = (idx_finger.x * self.vision.width, idx_finger.y * self.vision.height)
                 macro = self.dashboard.check_tap(tip_coords)
                 if macro:
@@ -111,10 +137,10 @@ class OmniDeskApp:
                     self.ui.update_status(f"Action: {macro}")
 
             # 4. Update UI Preview
-            if self.ui.preview.isVisible():
+            if hasattr(self.ui, 'preview') and self.ui.preview.isVisible():
                 preview_frame = frame.copy()
-                if results.get('hands') and hasattr(results['hands'], 'multi_hand_landmarks') and results['hands'].multi_hand_landmarks:
-                    for lm in results['hands'].multi_hand_landmarks[0].landmark:
+                if hands and hasattr(hands, 'multi_hand_landmarks') and hands.multi_hand_landmarks:
+                    for lm in hands.multi_hand_landmarks[0].landmark:
                         cv2.circle(preview_frame, (int(lm.x*self.vision.width), int(lm.y*self.vision.height)), 3, (0, 255, 0), -1)
                 if self.dashboard.corners:
                     for pt in self.dashboard.corners:
@@ -123,7 +149,7 @@ class OmniDeskApp:
                 preview_frame = cv2.cvtColor(preview_frame, cv2.COLOR_BGR2RGB)
                 self.ui.preview.update_frame(preview_frame)
 
-            time.sleep(1.0 / self.config['system']['fps'])
+            time.sleep(1.0 / self.config['system'].get('fps', 30))
 
     def stop(self):
         self.running = False
