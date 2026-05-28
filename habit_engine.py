@@ -357,7 +357,7 @@ class HabitEngine:
     def window_snap_control(self, hand_results):
         if self.mode == "Off": return
         if not self.config.get('habits', {}).get('window_snap', {}).get('enabled', True): return
-        if hand_results and hasattr(hand_results, 'multi_hand_landmarks') and len(hand_results.multi_hand_landmarks) >= 2:
+        if hand_results and hasattr(hand_results, 'multi_hand_landmarks') and hand_results.multi_hand_landmarks and len(hand_results.multi_hand_landmarks) >= 2:
             lm0 = hand_results.multi_hand_landmarks[0].landmark[0]
             lm1 = hand_results.multi_hand_landmarks[1].landmark[0]
             dist = np.sqrt((lm0.x - lm1.x)**2 + (lm0.y - lm1.y)**2)
