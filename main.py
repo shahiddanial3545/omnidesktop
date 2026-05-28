@@ -1,4 +1,10 @@
 import sys
+import os
+# Suppress protobuf deprecation warnings and TF logs
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module='google.protobuf.symbol_database')
+
 import json
 import threading
 import time
