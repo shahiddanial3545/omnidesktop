@@ -26,9 +26,10 @@ class StatsTracker:
             self.data[today] = {"focus_minutes": 0, "posture_alerts": 0, "dashboard_taps": 0, "gestures_used": 0, "focus_score": 100}
 
         if category == "focus_score":
-            # Average score for the day
+            # EWMA Focus Score: Smooths day-to-day fluctuations
+            alpha = 0.3
             old_score = self.data[today].get("focus_score", 100)
-            self.data[today]["focus_score"] = (old_score + value) // 2
+            self.data[today]["focus_score"] = int(alpha * value + (1 - alpha) * old_score)
         elif category in self.data[today]:
             self.data[today][category] += value
 

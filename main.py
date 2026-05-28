@@ -25,11 +25,16 @@ class OmniDeskApp:
         self.stats = StatsTracker()
         self.vision = VisionCore(camera_id=self.config['system'].get('camera_id', 0), alpha=self.config['system'].get('ema_alpha', 0.3))
         self.habit_engine = HabitEngine(self.config)
+        self._last_active_window = None
         self.habit_engine.stats = self.stats
         self.dashboard = PaperDashboard(corners=self.config['paper_dashboard'].get('corners'), buttons=self.config['paper_dashboard'].get('buttons', []))
         self.topology = SkeletalTopology(tolerance=self.config['system'].get('gesture_tolerance', 0.85))
         self.habit_engine._swipe_detector = SwipeDetector()
         self.habit_engine._circle_detector = CircleDetector()
+
+        # Gesture Intent Tracking
+        self._last_sig = None
+        self._stability_frames = 0
         self.obj_learner = ObjectLearner()
         self.auto_paper = AutoPaperDetector()
         self._input_queue = queue.Queue(maxsize=1)
@@ -92,10 +97,12 @@ class OmniDeskApp:
         self.update_voice_state()
         self.ui.mode_changed.connect(self.handle_mode_change)
         self.ui.record_gesture.connect(self.start_gesture_recording)
+        self.ui.re_record_gesture.connect(self.handle_re_record)
         self.ui.learn_object.connect(self.start_object_learning)
         self.ui.show_log_requested.connect(lambda: self.ui.show_log(self.habit_engine.activity_log, self.stats.get_today_stats().get("focus_score")))
         self.ui.show_stats_requested.connect(self.handle_show_stats)
         self.ui.edit_dashboard_requested.connect(self.ui.open_dashboard_editor)
+        self.ui.edit_poses_requested.connect(self.ui.open_pose_manager)
         self.ui.camera_retry_requested.connect(self.handle_camera_retry)
         self.ui.pomodoro_finished.connect(lambda: self.habit_engine.speak("Pomodoro cycle complete. Take a break."))
         self.ui.config_updated.connect(self.handle_config_update)
@@ -190,6 +197,25 @@ class OmniDeskApp:
     def start_gesture_recording(self):
         self.trigger_gesture_recording()
 
+    def handle_re_record(self, idx):
+        def re_record_worker():
+            self.ui.update_status_signal.emit(f"Updating Pose {idx} in 3s...")
+            time.sleep(3)
+            frame = self.vision.get_frame()
+            if frame is not None:
+                results = self.vision.process(frame, features=['hands'])
+                hands = results.get('hands')
+                if hands and hands.multi_hand_landmarks:
+                    sig = self.topology.get_signature(hands.multi_hand_landmarks[0])
+                    if sig:
+                        self.config['custom_gestures'][idx]['signature'] = sig
+                        self.save_config()
+                        self.ui.show_message_signal.emit("Success", "Pose updated!", "info")
+                        return
+            self.ui.show_message_signal.emit("Error", "Could not capture pose.", "warning")
+
+        threading.Thread(target=re_record_worker, daemon=True).start()
+
     def handle_config_update(self, new_config):
         self.config = new_config
         self.save_config()
@@ -279,6 +305,20 @@ class OmniDeskApp:
                 cmd = self._get_input_threadsafe("Object Learned", "Enter Command/URL:")
                 if cmd: self.config['custom_objects'].append({"hsv": profile, "macro": cmd}); self.save_config(); self.ui.update_status_signal.emit("Object Saved")
 
+            self.habit_engine.update_gaze_context(self.vision.get_gaze_vector(results.get('face_mesh')))
+
+            # Task Switching detection (Simple)
+            if self.mode == "Focus":
+                try:
+                    if sys.platform == 'win32':
+                        import ctypes
+                        curr_win = ctypes.windll.user32.GetForegroundWindow()
+                        if curr_win != self._last_active_window:
+                            if self._last_active_window is not None:
+                                self.habit_engine._session_task_switches += 1
+                            self._last_active_window = curr_win
+                except: pass
+
             self.habit_engine.palm_menu(hands)
             self.habit_engine.virtual_desktop_switcher(hands)
             self.habit_engine.window_snap_control(hands)
@@ -289,10 +329,24 @@ class OmniDeskApp:
 
             if hands and hands.multi_hand_landmarks:
                 curr_sig = self.topology.get_signature(hands.multi_hand_landmarks[0])
-                for g in self.config.get('custom_gestures', []):
-                    if self.topology.match(curr_sig, g['signature']) > self.topology.tolerance:
-                        self.stats.log_stat("gestures_used", 1)
-                        self.habit_engine.play_chime("detect"); subprocess.Popen(g['macro'], shell=True); time.sleep(2)
+
+                # Gesture Intent logic: check stability
+                if self._last_sig is not None:
+                    similarity = self.topology.match(curr_sig, self._last_sig)
+                    if similarity > 0.95:
+                        self._stability_frames += 1
+                    else:
+                        self._stability_frames = 0
+                self._last_sig = curr_sig
+
+                # Only trigger if stable for 5 frames (Intent)
+                if self._stability_frames >= 5:
+                    for g in self.config.get('custom_gestures', []):
+                        if self.topology.match(curr_sig, g['signature']) > self.topology.tolerance:
+                            self.stats.log_stat("gestures_used", 1)
+                            self.habit_engine.play_chime("detect"); subprocess.Popen(g['macro'], shell=True); time.sleep(2)
+                            self._stability_frames = 0
+                            break
 
                 idx = hands.multi_hand_landmarks[0].landmark[8]
                 macro = self.dashboard.check_tap((idx.x * self.vision.width, idx.y * self.vision.height))

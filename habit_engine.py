@@ -26,6 +26,7 @@ class HabitEngine:
         self.config = config
         self.stats = None
         self.activity_log = []
+        self.gaze_context = [0.5, 0.5] # X, Y
         self.last_slouch_time = time.time()
         self.is_slouching = False
         self.morning_routine_done = False
@@ -43,6 +44,7 @@ class HabitEngine:
         self._last_swipe_time = 0
         self._last_snap_time = 0
         self._snap_prev_dist = None
+        self._snap_stable_count = 0
         self._circle_detector = None  # injected from main
         self._alt_tab_open = False
         self._last_switcher_time = 0
@@ -66,10 +68,13 @@ class HabitEngine:
         # Feature C: Ambient Light
         self._light_mode_time = 0
         self._last_light_mode_change = 0
+        self._light_baseline = []
 
         # Feature D: Focus Score
         self._session_start = None
         self._session_events = []
+        self._session_blinks = 0
+        self._session_task_switches = 0
 
         # Feature B: Voice Command Mode
         self._voice_thread = None
@@ -108,19 +113,37 @@ class HabitEngine:
 
     def calculate_focus_score(self):
         if not self._session_start: return
+        duration_mins = (time.time() - self._session_start) / 60
         score = 100
+
         posture_count = self._session_events.count("posture")
         privacy_count = self._session_events.count("privacy")
         phone_count = self._session_events.count("phone")
 
+        # Penalties
         score -= min(posture_count * 10, 40)
         score -= privacy_count * 5
         score -= phone_count * 15
-        score = max(0, score)
+
+        # Blink Rate Factor (Fatigue Index)
+        # Normal is 12-15 blinks/min. < 8 or > 25 is bad for focus/fatigue.
+        avg_blink_rate = self._session_blinks / (duration_mins + 1e-6)
+        if avg_blink_rate < 8: score -= 10
+        elif avg_blink_rate > 25: score -= 15
+
+        # Task Switching Factor
+        score -= min(self._session_task_switches * 5, 30)
+
+        score = max(0, min(100, score))
 
         if self.stats:
             self.stats.log_stat("focus_score", score)
-        self.log_event(f"Focus session ended. Score: {score}/100")
+        self.log_event(f"Focus session ended ({int(duration_mins)}m). Score: {score}/100. Avg Blinks: {int(avg_blink_rate)}/m")
+
+        # Suggested Break
+        if score < 60:
+            self.speak("Focus score is low. You might need a cognitive break.")
+
         self._session_start = None
 
     def speak(self, text):
@@ -220,7 +243,17 @@ class HabitEngine:
         if not self.config.get('habits', {}).get('posture_guardian', {}).get('enabled', True): return
         if pose_results and hasattr(pose_results, 'pose_landmarks') and pose_results.pose_landmarks:
             l = pose_results.pose_landmarks.landmark
-            if abs(l[11].y - l[12].y) > 0.05 or (l[1].y + l[4].y)/2 > 0.5:
+
+            # Predictive slouch check
+            slouch_ratio = (l[1].y + l[4].y)/2
+            shoulder_tilt = abs(l[11].y - l[12].y)
+
+            # Pre-emption Alert: alert if approaching limit
+            if 0.45 < slouch_ratio < 0.5 and not self.is_slouching:
+                 if time.time() % 30 < 1: # Throttle pre-emption logs
+                    self.log_event("⚠️ Posture warning: Head dipping low")
+
+            if shoulder_tilt > 0.05 or slouch_ratio > 0.5:
                 if not self.is_slouching:
                     self.last_slouch_time = time.time(); self.is_slouching = True
                     self.speak("Please fix your posture")
@@ -345,9 +378,16 @@ class HabitEngine:
                         except Exception as e:
                             print(f"Object macro failed: {e}")
 
+    def update_gaze_context(self, gaze_vector):
+        self.gaze_context = gaze_vector
+
     def virtual_desktop_switcher(self, hand_results):
         if self.mode == "Off": return
         if not self.config.get('habits', {}).get('virtual_desktop', {}).get('enabled', True): return
+
+        # Gaze check
+        if abs(self.gaze_context[0] - 0.5) > 0.3: return
+
         if hand_results and hasattr(hand_results, 'multi_hand_landmarks') and hand_results.multi_hand_landmarks:
             wrist_x = hand_results.multi_hand_landmarks[0].landmark[0].x
             if self._swipe_detector:
@@ -365,35 +405,65 @@ class HabitEngine:
     def window_snap_control(self, hand_results):
         if self.mode == "Off": return
         if not self.config.get('habits', {}).get('window_snap', {}).get('enabled', True): return
+
+        # Intent Check: must be looking at screen
+        if not self.check_gaze_intent(sensitivity=0.4): return
+
         if hand_results and hasattr(hand_results, 'multi_hand_landmarks') and hand_results.multi_hand_landmarks and len(hand_results.multi_hand_landmarks) >= 2:
             lm0 = hand_results.multi_hand_landmarks[0].landmark[0]
             lm1 = hand_results.multi_hand_landmarks[1].landmark[0]
             dist = np.sqrt((lm0.x - lm1.x)**2 + (lm0.y - lm1.y)**2)
-            if self._snap_prev_dist is None: self._snap_prev_dist = dist; return
+
+            if self._snap_prev_dist is None:
+                self._snap_prev_dist = dist
+                self._snap_stable_count = 0
+                return
+
             delta = dist - self._snap_prev_dist
             now = time.time()
-            if now - self._last_snap_time < 1.0: self._snap_prev_dist = dist; return
-            if delta > 0.12:
-                self._safe_macro(pyautogui.hotkey, 'win', 'up')
-                self.log_event("🗖 Window Maximized (spread)")
-                self._last_snap_time = now
-            elif delta < -0.12:
-                self._safe_macro(pyautogui.hotkey, 'win', 'down')
-                self.log_event("🗗 Window Minimized (pinch)")
-                self._last_snap_time = now
-            elif lm0.x < 0.2 and abs(delta) < 0.05:
-                self._safe_macro(pyautogui.hotkey, 'win', 'left')
-                self.log_event("⬅️ Window Snapped Left")
-                self._last_snap_time = now
-            elif lm0.x > 0.8 and abs(delta) < 0.05:
-                self._safe_macro(pyautogui.hotkey, 'win', 'right')
-                self.log_event("➡️ Window Snapped Right")
-                self._last_snap_time = now
+
+            if now - self._last_snap_time < 1.2: # Increased cooldown for stability
+                self._snap_prev_dist = dist
+                return
+
+            # Stability logic for window snap to prevent rapid firing
+            if abs(delta) > 0.12:
+                self._snap_stable_count += 1
+                if self._snap_stable_count >= 3: # Must hold the delta for 3 frames
+                    if delta > 0:
+                        self._safe_macro(pyautogui.hotkey, 'win', 'up')
+                        self.log_event("🗖 Window Maximized (Spread intent)")
+                    else:
+                        self._safe_macro(pyautogui.hotkey, 'win', 'down')
+                        self.log_event("🗗 Window Minimized (Pinch intent)")
+                    self._last_snap_time = now
+                    self._snap_stable_count = 0
+            elif (lm0.x < 0.15 or lm0.x > 0.85) and abs(delta) < 0.05:
+                self._snap_stable_count += 1
+                if self._snap_stable_count >= 5:
+                    if lm0.x < 0.15:
+                        self._safe_macro(pyautogui.hotkey, 'win', 'left')
+                        self.log_event("⬅️ Window Snapped Left")
+                    else:
+                        self._safe_macro(pyautogui.hotkey, 'win', 'right')
+                        self.log_event("➡️ Window Snapped Right")
+                    self._last_snap_time = now
+                    self._snap_stable_count = 0
+            else:
+                self._snap_stable_count = 0
+
             self._snap_prev_dist = dist
+
+    def check_gaze_intent(self, sensitivity=0.3):
+        """Checks if the user is looking at the screen center."""
+        return abs(self.gaze_context[0] - 0.5) < sensitivity and abs(self.gaze_context[1] - 0.5) < sensitivity
 
     def app_switcher(self, hand_results):
         if self.mode == "Off": return
         if not self.config.get('habits', {}).get('app_switcher', {}).get('enabled', True): return
+
+        # Gaze check
+        if not self.check_gaze_intent(): return
 
         if not hand_results or not hasattr(hand_results, 'multi_hand_landmarks') or not hand_results.multi_hand_landmarks:
             if self._alt_tab_open:
@@ -491,22 +561,32 @@ class HabitEngine:
 
     def ambient_light_monitor(self, frame):
         now = time.time()
+        avg_brightness = cv2.mean(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))[0]
+
+        # Adaptive Baseline
+        self._light_baseline.append(avg_brightness)
+        if len(self._light_baseline) > 100: self._light_baseline.pop(0)
+        baseline = np.mean(self._light_baseline) if self._light_baseline else 128
+
         if now - self._last_light_mode_change < 60: return
 
-        avg_brightness = cv2.mean(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))[0]
-        if avg_brightness < 50:
+        # Thresholds relative to adaptive baseline
+        dark_thresh = max(30, baseline * 0.4)
+        light_thresh = min(220, baseline * 1.6)
+
+        if avg_brightness < dark_thresh:
             if self._light_mode_time == 0: self._light_mode_time = now
             elif now - self._light_mode_time > 10:
                 if sys.platform == "win32":
                     subprocess.Popen("reg add HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize /v AppsUseLightTheme /t REG_DWORD /d 0 /f", shell=True)
-                self.log_event("🌙 Dark mode activated")
+                self.log_event("🌙 Dark mode activated (Adaptive)")
                 self._last_light_mode_change = now; self._light_mode_time = 0
-        elif avg_brightness > 150:
+        elif avg_brightness > light_thresh:
             if self._light_mode_time == 0: self._light_mode_time = now
             elif now - self._light_mode_time > 10:
                 if sys.platform == "win32":
                     subprocess.Popen("reg add HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize /v AppsUseLightTheme /t REG_DWORD /d 1 /f", shell=True)
-                self.log_event("☀️ Light mode restored")
+                self.log_event("☀️ Light mode restored (Adaptive)")
                 self._last_light_mode_change = now; self._light_mode_time = 0
         else:
             self._light_mode_time = 0

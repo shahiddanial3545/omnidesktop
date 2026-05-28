@@ -213,6 +213,91 @@ class PomodoroTimer(QWidget):
             self.seconds -= 1
         self.label.setText(f"{self.minutes:02d}:{self.seconds:02d}")
 
+class PoseManagerDialog(QDialog):
+    def __init__(self, config, parent=None):
+        super().__init__(parent)
+        self.config = config
+        self.parent_ui = parent
+        self.setWindowTitle("AI Pose & Gesture Manager")
+        self.setFixedSize(600, 500)
+        self.setStyleSheet("background-color: #1a1a2e; color: #e0e0e0;")
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout()
+        header = QLabel("Active Gesture Mappings")
+        header.setStyleSheet("font-size: 18px; font-weight: bold; color: #00adb5;")
+        layout.addWidget(header)
+
+        self.list_widget = QListWidget()
+        self.list_widget.setStyleSheet("background-color: #16213e; border: 1px solid #0f3460; padding: 5px;")
+        layout.addWidget(self.list_widget)
+        self.refresh_list()
+
+        form = QFormLayout()
+        self.macro_edit = QLineEdit()
+        self.macro_edit.setPlaceholderText("Enter command or URL...")
+        form.addRow("Macro Action:", self.macro_edit)
+        layout.addLayout(form)
+
+        btn_layout = QHBoxLayout()
+        save_btn = QPushButton("Update Macro")
+        save_btn.clicked.connect(self.update_macro)
+
+        re_record_btn = QPushButton("Re-record Pose")
+        re_record_btn.setStyleSheet("background-color: #2980b9;")
+        re_record_btn.clicked.connect(self.re_record_selected)
+
+        del_btn = QPushButton("Delete")
+        del_btn.clicked.connect(self.delete_gesture)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+
+        btn_layout.addWidget(save_btn); btn_layout.addWidget(re_record_btn); btn_layout.addWidget(del_btn); btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+        self.setLayout(layout)
+
+    def re_record_selected(self):
+        curr = self.list_widget.currentRow()
+        if curr >= 0:
+            self.parent_ui.re_record_gesture.emit(curr)
+            self.accept()
+
+    def refresh_list(self):
+        self.list_widget.clear()
+        for idx, g in enumerate(self.config.get('custom_gestures', [])):
+            self.list_widget.addItem(f"{idx}: {g['name']} -> {g['macro']}")
+
+    def update_macro(self):
+        curr = self.list_widget.currentRow()
+        if curr >= 0 and self.macro_edit.text():
+            self.config['custom_gestures'][curr]['macro'] = self.macro_edit.text()
+            self.refresh_list()
+
+    def delete_gesture(self):
+        curr = self.list_widget.currentRow()
+        if curr >= 0:
+            self.config['custom_gestures'].pop(curr)
+            self.refresh_list()
+
+    def refresh_list(self):
+        self.list_widget.clear()
+        for idx, g in enumerate(self.config.get('custom_gestures', [])):
+            self.list_widget.addItem(f"{idx}: {g['name']} -> {g['macro']}")
+
+    def update_macro(self):
+        curr = self.list_widget.currentRow()
+        if curr >= 0 and self.macro_edit.text():
+            self.config['custom_gestures'][curr]['macro'] = self.macro_edit.text()
+            self.refresh_list()
+
+    def delete_gesture(self):
+        curr = self.list_widget.currentRow()
+        if curr >= 0:
+            self.config['custom_gestures'].pop(curr)
+            self.refresh_list()
+
 class DashboardEditorDialog(QDialog):
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -342,6 +427,7 @@ class PreviewWindow(QWidget):
 class OmniBubble(QWidget):
     mode_changed = pyqtSignal(str)
     record_gesture = pyqtSignal()
+    re_record_gesture = pyqtSignal(int)
     learn_object = pyqtSignal()
     config_updated = pyqtSignal(dict)
     show_log_requested = pyqtSignal()
@@ -350,6 +436,7 @@ class OmniBubble(QWidget):
     show_message_signal = pyqtSignal(str, str, str) # title, message, type (info/warning/error)
     show_stats_requested = pyqtSignal()
     edit_dashboard_requested = pyqtSignal()
+    edit_poses_requested = pyqtSignal()
     pomodoro_finished = pyqtSignal()
     camera_retry_requested = pyqtSignal()
     request_camera_error_signal = pyqtSignal()
@@ -414,6 +501,7 @@ class OmniBubble(QWidget):
         menu.addSeparator()
         log_act = menu.addAction("📋 Activity Log"); stats_act = menu.addAction("📊 View Stats Report")
         dash_act = menu.addAction("📋 Edit Dashboard")
+        pose_act = menu.addAction("🖐 Pose Manager")
         air_mouse_act = menu.addAction("🖱️ Toggle Air Mouse")
         sett_act = menu.addAction("⚙️ Settings"); wiz_act = menu.addAction("🧙 Onboarding Wizard")
         menu.addSeparator()
@@ -429,6 +517,7 @@ class OmniBubble(QWidget):
         elif action == log_act: self.show_log_requested.emit()
         elif action == stats_act: self.show_stats_requested.emit()
         elif action == dash_act: self.edit_dashboard_requested.emit()
+        elif action == pose_act: self.edit_poses_requested.emit()
         elif action == air_mouse_act: self._toggle_air_mouse()
         elif action == pom_act: self.pomodoro.start(25)
         elif action == sett_act: self.open_settings()
@@ -449,6 +538,11 @@ class OmniBubble(QWidget):
 
     def open_dashboard_editor(self):
         dlg = DashboardEditorDialog(self.config, self)
+        if dlg.exec_():
+            self.config_updated.emit(self.config)
+
+    def open_pose_manager(self):
+        dlg = PoseManagerDialog(self.config, self)
         if dlg.exec_():
             self.config_updated.emit(self.config)
 

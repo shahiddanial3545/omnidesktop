@@ -71,6 +71,41 @@ class EMAFilter:
             self.value = self.alpha * new_value + (1 - self.alpha) * self.value
         return self.value
 
+class TrajectoryTracker:
+    def __init__(self, alpha=0.4):
+        self.alpha = alpha
+        self.smoothed_sig = None
+
+    def update(self, current_sig):
+        if self.smoothed_sig is None:
+            self.smoothed_sig = np.array(current_sig)
+        else:
+            self.smoothed_sig = self.alpha * np.array(current_sig) + (1 - self.alpha) * self.smoothed_sig
+        return self.smoothed_sig.tolist()
+
+class PointKalmanFilter:
+    def __init__(self, process_noise=0.03, measurement_noise=0.5, error_init=1.0):
+        self.process_noise = process_noise
+        self.measurement_noise = measurement_noise
+        self.estimated_error = error_init
+        self.current_estimate = None
+
+    def update(self, measurement):
+        if self.current_estimate is None:
+            self.current_estimate = measurement
+            return measurement
+
+        # Prediction
+        prediction = self.current_estimate
+        self.estimated_error += self.process_noise
+
+        # Update
+        kalman_gain = self.estimated_error / (self.estimated_error + self.measurement_noise)
+        self.current_estimate = prediction + kalman_gain * (measurement - prediction)
+        self.estimated_error = (1 - kalman_gain) * self.estimated_error
+
+        return self.current_estimate
+
 class VisionCore:
     def __init__(self, camera_id=0, width=640, height=480, alpha=0.3):
         self.cap = cv2.VideoCapture(camera_id)
@@ -85,11 +120,39 @@ class VisionCore:
         self._face_detection = None
         self._face_mesh = None
         self.filters = {}
+        self.kalman_filters = {}
+        self.gaze_vector = [0.5, 0.5] # Default center
+
+    def get_gaze_vector(self, face_landmarks):
+        """Calculates rough gaze vector using eye-to-iris relationship."""
+        if not face_landmarks: return [0.5, 0.5]
+        lm = face_landmarks.landmark
+        # Using landmarks for eyes and irises (approximate)
+        # Left eye: 33, 133; Left iris center: 468
+        # Right eye: 362, 263; Right iris center: 473
+        l_eye_l, l_eye_r = lm[33], lm[133]
+        r_eye_l, r_eye_r = lm[362], lm[263]
+        l_iris, r_iris = lm[468], lm[473]
+
+        # Calculate horizontal and vertical gaze ratio
+        lx = (l_iris.x - l_eye_l.x) / (l_eye_r.x - l_eye_l.x + 1e-6)
+        rx = (r_iris.x - r_eye_l.x) / (r_eye_r.x - r_eye_l.x + 1e-6)
+        ly = (l_iris.y - (l_eye_l.y + l_eye_r.y)/2) / (abs(l_eye_r.x - l_eye_l.x) + 1e-6)
+
+        gx = (lx + rx) / 2
+        gy = ly + 0.5 # Normalizing around 0.5
+        self.gaze_vector = [np.clip(gx, 0, 1), np.clip(gy, 0, 1)]
+        return self.gaze_vector
 
     def _get_filter(self, key):
         if key not in self.filters:
             self.filters[key] = EMAFilter(self.alpha)
         return self.filters[key]
+
+    def _get_kalman(self, key):
+        if key not in self.kalman_filters:
+            self.kalman_filters[key] = PointKalmanFilter()
+        return self.kalman_filters[key]
 
     @property
     def hands(self):
@@ -148,12 +211,20 @@ class VisionCore:
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         return self.cap.isOpened()
 
-    def smooth_landmarks(self, results, feature_type):
+    def smooth_landmarks(self, results, feature_type, use_kalman=False):
         if results is None: return
         if feature_type == 'hands' and hasattr(results, 'multi_hand_landmarks') and results.multi_hand_landmarks:
             for hand_id, hand_landmarks in enumerate(results.multi_hand_landmarks):
                 for idx, lm in enumerate(hand_landmarks.landmark):
-                    key = f"hand_{hand_id}_{idx}"; lm.x = self._get_filter(key+"_x").apply(lm.x); lm.y = self._get_filter(key+"_y").apply(lm.y); lm.z = self._get_filter(key+"_z").apply(lm.z)
+                    key = f"hand_{hand_id}_{idx}"
+                    if use_kalman:
+                        lm.x = self._get_kalman(key+"_x").update(lm.x)
+                        lm.y = self._get_kalman(key+"_y").update(lm.y)
+                        lm.z = self._get_kalman(key+"_z").update(lm.z)
+                    else:
+                        lm.x = self._get_filter(key+"_x").apply(lm.x)
+                        lm.y = self._get_filter(key+"_y").apply(lm.y)
+                        lm.z = self._get_filter(key+"_z").apply(lm.z)
         elif feature_type == 'pose' and hasattr(results, 'pose_landmarks') and results.pose_landmarks:
             for idx, lm in enumerate(results.pose_landmarks.landmark):
                 key = f"pose_{idx}"; lm.x = self._get_filter(key+"_x").apply(lm.x); lm.y = self._get_filter(key+"_y").apply(lm.y); lm.z = self._get_filter(key+"_z").apply(lm.z)
@@ -162,13 +233,13 @@ class VisionCore:
                 for idx, lm in enumerate(face_landmarks.landmark):
                     key = f"face_{face_id}_{idx}"; lm.x = self._get_filter(key+"_x").apply(lm.x); lm.y = self._get_filter(key+"_y").apply(lm.y); lm.z = self._get_filter(key+"_z").apply(lm.z)
 
-    def process(self, frame, features=None):
+    def process(self, frame, features=None, use_kalman=False):
         if features is None: features = ['hands', 'pose', 'face_detection', 'face_mesh']
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = {}
         if 'hands' in features:
             res = self.hands.process(rgb_frame)
-            self.smooth_landmarks(res, 'hands')
+            self.smooth_landmarks(res, 'hands', use_kalman=use_kalman)
             results['hands'] = res
         if 'pose' in features:
             res = self.pose.process(rgb_frame)

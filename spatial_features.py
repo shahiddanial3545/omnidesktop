@@ -6,6 +6,7 @@ from collections import deque
 class AutoPaperDetector:
     def __init__(self):
         self.last_corners = None
+        self.alpha = 0.2 # Smoothing for adaptive tracking
 
     def detect(self, frame):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -13,15 +14,38 @@ class AutoPaperDetector:
         thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contours = sorted(contours, key=cv2.contourArea, reverse=True)
+
+        best_cnt = None
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if area < 50000: continue
+            if area < 40000: continue # Slightly lower threshold for better recall
             peri = cv2.arcLength(cnt, True)
             approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
             if len(approx) == 4:
-                self.last_corners = approx.reshape(4, 2).tolist()
-                return self.last_corners
+                best_cnt = approx.reshape(4, 2).astype(float)
+                break
+
+        if best_cnt is not None:
+            if self.last_corners is None:
+                self.last_corners = best_cnt
+            else:
+                # Order corners to match them consistently
+                ordered_best = self._order_points(best_cnt)
+                ordered_last = self._order_points(self.last_corners)
+                # Weighted average for smooth adaptive tracking
+                self.last_corners = self.alpha * ordered_best + (1 - self.alpha) * ordered_last
+            return self.last_corners.tolist()
         return None
+
+    def _order_points(self, pts):
+        rect = np.zeros((4, 2), dtype="float32")
+        s = pts.sum(axis=1)
+        rect[0] = pts[np.argmin(s)]
+        rect[2] = pts[np.argmax(s)]
+        diff = np.diff(pts, axis=1)
+        rect[1] = pts[np.argmin(diff)]
+        rect[3] = pts[np.argmax(diff)]
+        return rect
 
 class PaperDashboard:
     def __init__(self, corners=None, buttons=None):
@@ -63,8 +87,10 @@ class PaperDashboard:
 class SkeletalTopology:
     def __init__(self, tolerance=0.85):
         self.tolerance = tolerance
+        from vision_core import TrajectoryTracker
+        self.tracker = TrajectoryTracker(alpha=0.3)
 
-    def get_signature(self, landmarks):
+    def get_signature(self, landmarks, smooth=True):
         if not landmarks: return None
         base = landmarks.landmark[0]
         points = []
@@ -73,7 +99,10 @@ class SkeletalTopology:
         points = np.array(points)
         scale = np.max(np.linalg.norm(points, axis=1))
         if scale > 0: points /= scale
-        return points.flatten().tolist()
+        sig = points.flatten().tolist()
+        if smooth:
+            sig = self.tracker.update(sig)
+        return sig
 
     def match(self, current_sig, saved_sig):
         if current_sig is None or saved_sig is None: return 0
