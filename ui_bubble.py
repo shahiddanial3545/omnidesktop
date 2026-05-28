@@ -414,6 +414,7 @@ class OmniBubble(QWidget):
         menu.addSeparator()
         log_act = menu.addAction("📋 Activity Log"); stats_act = menu.addAction("📊 View Stats Report")
         dash_act = menu.addAction("📋 Edit Dashboard")
+        air_mouse_act = menu.addAction("🖱️ Toggle Air Mouse")
         sett_act = menu.addAction("⚙️ Settings"); wiz_act = menu.addAction("🧙 Onboarding Wizard")
         menu.addSeparator()
         p_act = menu.addAction("👁 Toggle Preview")
@@ -428,6 +429,7 @@ class OmniBubble(QWidget):
         elif action == log_act: self.show_log_requested.emit()
         elif action == stats_act: self.show_stats_requested.emit()
         elif action == dash_act: self.edit_dashboard_requested.emit()
+        elif action == air_mouse_act: self._toggle_air_mouse()
         elif action == pom_act: self.pomodoro.start(25)
         elif action == sett_act: self.open_settings()
         elif action == wiz_act: self.open_wizard()
@@ -449,6 +451,14 @@ class OmniBubble(QWidget):
         dlg = DashboardEditorDialog(self.config, self)
         if dlg.exec_():
             self.config_updated.emit(self.config)
+
+    def _toggle_air_mouse(self):
+        current = self.config.get('habits', {}).get('air_mouse', {}).get('enabled', False)
+        if 'habits' not in self.config: self.config['habits'] = {}
+        if 'air_mouse' not in self.config['habits']: self.config['habits']['air_mouse'] = {}
+        self.config['habits']['air_mouse']['enabled'] = not current
+        self.config_updated.emit(self.config)
+        self.update_status(f"Air Mouse: {'ON' if not current else 'OFF'}")
 
     def show_camera_error(self):
         dlg = CameraErrorDialog(self)

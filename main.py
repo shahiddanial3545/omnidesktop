@@ -34,6 +34,9 @@ class OmniDeskApp:
         self.auto_paper = AutoPaperDetector()
         self._input_queue = queue.Queue(maxsize=1)
 
+        import pyautogui as _pag
+        self._screen_w, self._screen_h = _pag.size()
+
         self.running = False
         self.mode = "Lazy"
         self.recording_gesture = False
@@ -280,6 +283,7 @@ class OmniDeskApp:
             self.habit_engine.virtual_desktop_switcher(hands)
             self.habit_engine.window_snap_control(hands)
             self.habit_engine.app_switcher(hands)
+            self.habit_engine.air_mouse(hands, self._screen_w, self._screen_h)
             self.habit_engine.air_scroll(hands)
             self.habit_engine.double_tap_detector(hands)
 

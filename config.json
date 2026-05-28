@@ -22,7 +22,8 @@
         "morning_routine": {"enabled": true, "apps": ["chrome", "code"]},
         "virtual_desktop": {"enabled": true},
         "window_snap": {"enabled": true},
-        "app_switcher": {"enabled": true}
+        "app_switcher": {"enabled": true},
+        "air_mouse": {"enabled": false}
     },
     "system": {
         "camera_id": 0,

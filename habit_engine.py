@@ -47,6 +47,14 @@ class HabitEngine:
         self._alt_tab_open = False
         self._last_switcher_time = 0
         self._switcher_prev_x = None
+        self._air_mouse_enabled = False
+        self._mouse_smooth_x = None
+        self._mouse_smooth_y = None
+        self._mouse_alpha = 0.4
+        self._was_pinching = False
+        self._was_two_pinching = False
+        self._last_click_time = 0
+        pyautogui.FAILSAFE = False
 
         # Feature A: Blink Detection
         self._blink_count = 0
@@ -413,6 +421,50 @@ class HabitEngine:
                 pyautogui.hotkey('shift', 'tab')
                 self._switcher_prev_x = lm.x
                 self.log_event("⬅️ App Switch: Previous")
+
+    def air_mouse(self, hand_results, screen_w, screen_h):
+        if self.mode == "Off": return
+        if not self.config.get('habits', {}).get('air_mouse', {}).get('enabled', False): return
+        if not hand_results or not hasattr(hand_results, 'multi_hand_landmarks') or not hand_results.multi_hand_landmarks:
+            return
+
+        lms = hand_results.multi_hand_landmarks[0].landmark
+        index_tip = lms[8]
+        thumb = lms[4]
+
+        # Map to screen coordinates (mirroring X)
+        raw_x = (1.0 - index_tip.x) * screen_w
+        raw_y = index_tip.y * screen_h
+
+        # EMA Smoothing
+        if self._mouse_smooth_x is None:
+            self._mouse_smooth_x = raw_x
+            self._mouse_smooth_y = raw_y
+        else:
+            self._mouse_smooth_x = self._mouse_alpha * raw_x + (1 - self._mouse_alpha) * self._mouse_smooth_x
+            self._mouse_smooth_y = self._mouse_alpha * raw_y + (1 - self._mouse_alpha) * self._mouse_smooth_y
+
+        pyautogui.moveTo(int(self._mouse_smooth_x), int(self._mouse_smooth_y), duration=0)
+
+        now = time.time()
+        # Left Click: Index + Thumb pinch
+        dist_click = np.sqrt((index_tip.x - thumb.x)**2 + (index_tip.y - thumb.y)**2)
+        is_pinching = dist_click < 0.04
+        if is_pinching and not self._was_pinching and now - self._last_click_time > 0.4:
+            pyautogui.click()
+            self.log_event("🖱️ Air Mouse: Left Click")
+            self._last_click_time = now
+        self._was_pinching = is_pinching
+
+        # Right Click: Index + Middle + Thumb pinch
+        middle_tip = lms[12]
+        dist_right = np.sqrt((middle_tip.x - thumb.x)**2 + (middle_tip.y - thumb.y)**2)
+        is_two_pinching = dist_click < 0.04 and dist_right < 0.04
+        if is_two_pinching and not self._was_two_pinching and now - self._last_click_time > 0.4:
+            pyautogui.click(button='right')
+            self.log_event("🖱️ Air Mouse: Right Click")
+            self._last_click_time = now
+        self._was_two_pinching = is_two_pinching
 
     def voice_command_listener(self, callback):
         try:
