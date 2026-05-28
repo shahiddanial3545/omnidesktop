@@ -2,59 +2,24 @@
     "paper_dashboard": {
         "corners": null,
         "buttons": [
-            {"name": "Mute", "rect": [0.05, 0.05, 0.25, 0.25], "macro": "toggle_mute"},
-            {"name": "Browser", "rect": [0.75, 0.05, 0.95, 0.25], "macro": "launch_browser"}
+            {"name": "Mute", "rect": [0.05, 0.05, 0.25, 0.25], "macro": "python -c \"import pyautogui; pyautogui.press('volumemute')\""},
+            {"name": "Browser", "rect": [0.75, 0.05, 0.95, 0.25], "macro": "start chrome || open -a 'Google Chrome' || xdg-open https://google.com"}
         ],
         "auto_detect": true
     },
     "custom_gestures": [],
     "custom_objects": [],
     "habits": {
-        "phone_down": {
-            "enabled": true,
-            "roi": [0.3, 0.3, 0.7, 0.7],
-            "macro_on": "dnd_on",
-            "macro_off": "dnd_off"
-        },
-        "privacy_shield": {
-            "enabled": true,
-            "sensitivity": 0.5
-        },
-        "posture_guardian": {
-            "enabled": true,
-            "slouch_timeout": 600,
-            "eye_dist_threshold": 0.2
-        },
-        "air_scroll": {
-            "enabled": true,
-            "sensitivity": 0.1
-        },
-        "morning_routine": {
-            "enabled": true,
-            "apps": ["chrome", "code"]
-        },
-        "coffee_mug_mute": {
-            "enabled": true,
-            "target_color_hsv": [0, 0, 50],
-            "tolerance": 20
-        },
-        "shush_trigger": {
-            "enabled": true,
-            "dist_threshold": 0.05
-        },
-        "double_tap": {
-            "enabled": true,
-            "velocity_threshold": 0.02
-        },
-        "palm_menu": {
-            "enabled": true,
-            "pinch_threshold": 0.05
-        },
-        "gaze_dimmer": {
-            "enabled": true,
-            "away_timeout": 5,
-            "dim_level": 10
-        }
+        "posture_guardian": {"enabled": true, "slouch_timeout": 600, "eye_dist_threshold": 0.2},
+        "privacy_shield": {"enabled": true, "sensitivity": 0.5},
+        "shush_trigger": {"enabled": true, "dist_threshold": 0.05},
+        "air_scroll": {"enabled": true, "sensitivity": 0.1},
+        "double_tap": {"enabled": true, "velocity_threshold": 0.02},
+        "palm_menu": {"enabled": true, "pinch_threshold": 0.05},
+        "gaze_dimmer": {"enabled": true, "away_timeout": 5, "dim_level": 10},
+        "phone_down": {"enabled": true, "roi": [0.3, 0.3, 0.7, 0.7]},
+        "coffee_mug_mute": {"enabled": true, "target_color_hsv": [0, 0, 50], "tolerance": 20},
+        "morning_routine": {"enabled": true, "apps": ["chrome", "code"]}
     },
     "system": {
         "camera_id": 0,

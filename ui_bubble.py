@@ -2,7 +2,7 @@ import sys
 import cv2
 import numpy as np
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QLabel, QMenu, QAction, QInputDialog, QLineEdit
-from PyQt5.QtCore import Qt, QPoint, QTimer, pyqtSignal, QSize
+from PyQt5.QtCore import Qt, QPoint, QTimer, pyqtSignal, QSize, QMetaObject
 from PyQt5.QtGui import QImage, QPixmap
 
 class PreviewWindow(QWidget):
@@ -29,6 +29,9 @@ class OmniBubble(QWidget):
     mode_changed = pyqtSignal(str)
     record_gesture = pyqtSignal()
     learn_object = pyqtSignal()
+    update_status_signal = pyqtSignal(str)
+    update_preview_signal = pyqtSignal(object)
+    request_input_signal = pyqtSignal(str, str)
 
     def __init__(self):
         super().__init__()
@@ -52,6 +55,10 @@ class OmniBubble(QWidget):
         self.layout.addWidget(self.bubble); self.layout.addWidget(self.status_label)
         self.setLayout(self.layout); self.move(100, 100); self.show()
 
+        # Connect internal signals
+        self.update_status_signal.connect(self.update_status)
+        self.update_preview_signal.connect(self.preview.update_frame)
+
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton: self.oldPos = event.globalPos()
 
@@ -65,15 +72,17 @@ class OmniBubble(QWidget):
     def show_context_menu(self, pos):
         menu = QMenu(self)
         menu.setStyleSheet("background: rgba(30,30,30,220); color: white; border: 1px solid #555;")
-        f_act = menu.addAction("Focus Mode"); l_act = menu.addAction("Lazy Mode"); o_act = menu.addAction("All Off")
+        f_act = menu.addAction("🎯 Focus Mode"); l_act = menu.addAction("😴 Lazy Mode")
+        a_act = menu.addAction("⚡ All On"); o_act = menu.addAction("⏸ All Off")
         menu.addSeparator()
-        rec_g_act = menu.addAction("Record Gesture"); lr_o_act = menu.addAction("Learn Object")
+        rec_g_act = menu.addAction("🤙 Record Gesture"); lr_o_act = menu.addAction("📦 Learn Object")
         menu.addSeparator()
-        p_act = menu.addAction("Toggle Preview")
+        p_act = menu.addAction("👁 Toggle Preview")
 
         action = menu.exec_(self.bubble.mapToGlobal(pos))
         if action == f_act: self.mode_changed.emit("Focus")
         elif action == l_act: self.mode_changed.emit("Lazy")
+        elif action == a_act: self.mode_changed.emit("All")
         elif action == o_act: self.mode_changed.emit("Off")
         elif action == rec_g_act: self.record_gesture.emit()
         elif action == lr_o_act: self.learn_object.emit()

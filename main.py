@@ -8,6 +8,7 @@ import threading
 import time
 import cv2
 import subprocess
+import queue
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QTimer
 from vision_core import VisionCore
@@ -25,6 +26,7 @@ class OmniDeskApp:
         self.topology = SkeletalTopology(tolerance=self.config['system'].get('gesture_tolerance', 0.85))
         self.obj_learner = ObjectLearner()
         self.auto_paper = AutoPaperDetector()
+        self._input_queue = queue.Queue(maxsize=1)
 
         self.running = False
         self.mode = "Lazy"
@@ -36,7 +38,24 @@ class OmniDeskApp:
         try:
             with open(self.config_path, 'r') as f: self.config = json.load(f)
         except:
-            self.config = {"system": {"camera_id": 0, "fps": 30, "ema_alpha": 0.3, "gesture_tolerance": 0.85}, "paper_dashboard": {"corners": None, "buttons": [], "auto_detect": True}, "custom_gestures": [], "custom_objects": [], "habits": {"posture_guardian": {"enabled": True, "slouch_timeout": 600}, "privacy_shield": {"enabled": True}, "shush_trigger": {"enabled": True, "dist_threshold": 0.05}, "air_scroll": {"enabled": True}, "double_tap": {"enabled": True, "velocity_threshold": 0.02}, "palm_menu": {"enabled": True, "pinch_threshold": 0.05}, "gaze_dimmer": {"enabled": True, "away_timeout": 5, "dim_level": 10}}}
+            self.config = {
+                "system": {"camera_id": 0, "fps": 30, "ema_alpha": 0.3, "gesture_tolerance": 0.85},
+                "paper_dashboard": {"corners": None, "buttons": [], "auto_detect": True},
+                "custom_gestures": [],
+                "custom_objects": [],
+                "habits": {
+                    "posture_guardian": {"enabled": True, "slouch_timeout": 600, "eye_dist_threshold": 0.2},
+                    "privacy_shield": {"enabled": True, "sensitivity": 0.5},
+                    "shush_trigger": {"enabled": True, "dist_threshold": 0.05},
+                    "air_scroll": {"enabled": True, "sensitivity": 0.1},
+                    "double_tap": {"enabled": True, "velocity_threshold": 0.02},
+                    "palm_menu": {"enabled": True, "pinch_threshold": 0.05},
+                    "gaze_dimmer": {"enabled": True, "away_timeout": 5, "dim_level": 10},
+                    "phone_down": {"enabled": True, "roi": [0.3, 0.3, 0.7, 0.7]},
+                    "coffee_mug_mute": {"enabled": True, "target_color_hsv": [0, 0, 50], "tolerance": 20},
+                    "morning_routine": {"enabled": True, "apps": ["chrome", "code"]}
+                }
+            }
 
     def save_config(self):
         with open(self.config_path, 'w') as f: json.dump(self.config, f, indent=4)
@@ -46,12 +65,25 @@ class OmniDeskApp:
         self.ui.mode_changed.connect(self.handle_mode_change)
         self.ui.record_gesture.connect(self.start_gesture_recording)
         self.ui.learn_object.connect(self.start_object_learning)
+        self.ui.request_input_signal.connect(self._handle_input_request)
         self.vision_thread = threading.Thread(target=self.run_vision, daemon=True)
         self.vision_thread.start()
 
-    def handle_mode_change(self, mode): self.mode = mode; self.habit_engine.set_mode(mode); self.ui.update_status(f"Mode: {mode}")
-    def start_gesture_recording(self): self.recording_gesture = True; self.ui.update_status("Perform gesture in 3s...")
-    def start_object_learning(self): self.learning_object = True; self.ui.update_status("Hold object in center...")
+    def _handle_input_request(self, title, label):
+        result = self.ui.get_macro_input(title, label)
+        self._input_queue.put(result)
+
+    def _get_input_threadsafe(self, title, label):
+        self.ui.request_input_signal.emit(title, label)
+        try: return self._input_queue.get(timeout=30)
+        except queue.Empty: return None
+
+    def handle_mode_change(self, mode):
+        self.mode = mode; self.habit_engine.set_mode(mode)
+        self.ui.update_status_signal.emit(f"Mode: {mode}")
+
+    def start_gesture_recording(self): self.recording_gesture = True; self.ui.update_status_signal.emit("Perform gesture now...")
+    def start_object_learning(self): self.learning_object = True; self.ui.update_status_signal.emit("Hold object in center...")
 
     def run_vision(self):
         while self.running:
@@ -62,31 +94,27 @@ class OmniDeskApp:
             if self.config['paper_dashboard'].get('auto_detect', True):
                 corners = self.auto_paper.detect(frame)
                 if corners:
-                    if not self.db_connected: self.habit_engine.play_chime("success"); self.db_connected = True
+                    if not self.db_connected: self.habit_engine.speak("Dashboard connected"); self.db_connected = True
                     self.dashboard.set_corners(corners)
+                else:
+                    if self.db_connected: self.db_connected = False; self.dashboard.set_corners([])
 
             results = self.vision.process(frame)
             hands = results.get('hands')
 
-            # 1. Recording Workflows
             if self.recording_gesture and hands and hands.multi_hand_landmarks:
                 sig = self.topology.get_signature(hands.multi_hand_landmarks[0])
                 if sig:
                     self.recording_gesture = False; self.habit_engine.play_chime("success")
-                    cmd = self.ui.get_macro_input("Gesture Recorded", "Enter Command/URL:")
-                    if cmd:
-                        self.config['custom_gestures'].append({"signature": sig, "macro": cmd})
-                        self.save_config(); self.ui.update_status("Gesture Saved")
+                    cmd = self._get_input_threadsafe("Gesture Recorded", "Enter Command/URL:")
+                    if cmd: self.config['custom_gestures'].append({"signature": sig, "macro": cmd}); self.save_config(); self.ui.update_status_signal.emit("Gesture Saved")
 
             if self.learning_object:
                 profile = self.obj_learner.get_hsv_profile(frame)
                 self.learning_object = False; self.habit_engine.play_chime("success")
-                cmd = self.ui.get_macro_input("Object Learned", "Enter Command/URL:")
-                if cmd:
-                    self.config['custom_objects'].append({"hsv": profile, "macro": cmd})
-                    self.save_config(); self.ui.update_status("Object Saved")
+                cmd = self._get_input_threadsafe("Object Learned", "Enter Command/URL:")
+                if cmd: self.config['custom_objects'].append({"hsv": profile, "macro": cmd}); self.save_config(); self.ui.update_status_signal.emit("Object Saved")
 
-            # 2. Parallel Tracking
             self.habit_engine.gaze_dimmer(results.get('face_mesh'))
             self.habit_engine.palm_menu(hands)
             self.habit_engine.posture_guardian(results.get('pose'))
@@ -97,14 +125,13 @@ class OmniDeskApp:
             self.habit_engine.morning_routine(results.get('face_detection'))
             self.habit_engine.phone_down_detector(frame)
             self.habit_engine.coffee_mug_mute(frame)
+            self.habit_engine.check_custom_objects(frame)
 
-            # 3. Custom Matchers
             if hands and hands.multi_hand_landmarks:
                 curr_sig = self.topology.get_signature(hands.multi_hand_landmarks[0])
                 for g in self.config.get('custom_gestures', []):
                     if self.topology.match(curr_sig, g['signature']) > self.topology.tolerance:
-                        self.habit_engine.play_chime("detect")
-                        subprocess.Popen(g['macro'], shell=True); time.sleep(2) # Cooldown
+                        self.habit_engine.play_chime("detect"); subprocess.Popen(g['macro'], shell=True); time.sleep(2)
 
                 idx = hands.multi_hand_landmarks[0].landmark[8]
                 macro = self.dashboard.check_tap((idx.x * self.vision.width, idx.y * self.vision.height))
@@ -116,7 +143,7 @@ class OmniDeskApp:
                     for lm in hands.multi_hand_landmarks[0].landmark: cv2.circle(p_f, (int(lm.x*self.vision.width), int(lm.y*self.vision.height)), 3, (0,255,0), -1)
                 if self.dashboard.corners:
                     for pt in self.dashboard.corners: cv2.circle(p_f, tuple(map(int, pt)), 5, (255,0,0), -1)
-                self.ui.preview.update_frame(cv2.cvtColor(p_f, cv2.COLOR_BGR2RGB))
+                self.ui.update_preview_signal.emit(cv2.cvtColor(p_f, cv2.COLOR_BGR2RGB))
 
             time.sleep(1.0 / self.config['system'].get('fps', 30))
 
